@@ -88,6 +88,17 @@ fun ActionDeck(
     var showSubpageSheet by remember(navGroups) { mutableStateOf(false) }
     var showCombatSkillsSheet by remember(navGroups) { mutableStateOf(false) }
 
+    val allCombatItems = remember(navGroups) { navGroups.flatMap { it.items } }
+    val combatFightBtn = remember(allCombatItems) {
+        allCombatItems.firstOrNull {
+            val u = it.url.lowercase()
+            u.contains("op=fight") && !u.contains("skill=") && !u.contains("auto=")
+        } ?: allCombatItems.firstOrNull { it.url.contains("op=fight", ignoreCase = true) }
+    }
+    val combatFleeBtn = remember(allCombatItems) {
+        allCombatItems.firstOrNull { it.url.contains("op=run", ignoreCase = true) }
+    }
+
     Surface(
         color = DccColors.Surface,
         tonalElevation = 8.dp,
@@ -136,27 +147,24 @@ fun ActionDeck(
 
             // 1. Combat Mode: slim 1-row Fight / Run / Skills deck
             if (pageType == "combat") {
-                val allItems = navGroups.flatMap { it.items }
-                val fightBtn = allItems.firstOrNull { it.url.contains("op=fight", ignoreCase = true) }
-                val fleeBtn = allItems.firstOrNull { it.url.contains("op=run", ignoreCase = true) }
-                val specialItems = allItems.filter { it != fightBtn && it != fleeBtn }
+                val specialItems = allCombatItems.filter { it != combatFightBtn && it != combatFleeBtn }
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (fightBtn != null) {
+                    if (combatFightBtn != null) {
                         Button(
                             enabled = enabled,
-                            onClick = { onNavigate(fightBtn.url) },
+                            onClick = { onNavigate(combatFightBtn.url) },
                             colors = ButtonDefaults.buttonColors(containerColor = DccColors.Crimson),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(vertical = 11.dp),
                             modifier = Modifier.weight(1.3f)
                         ) {
                             Text(
-                                text = cleanNavLabel(fightBtn.label),
+                                text = cleanNavLabel(combatFightBtn.label),
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -164,17 +172,17 @@ fun ActionDeck(
                         }
                     }
 
-                    if (fleeBtn != null) {
+                    if (combatFleeBtn != null) {
                         OutlinedButton(
                             enabled = enabled,
-                            onClick = { onNavigate(fleeBtn.url) },
+                            onClick = { onNavigate(combatFleeBtn.url) },
                             border = BorderStroke(1.dp, DccColors.Gold),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(vertical = 11.dp),
                             modifier = Modifier.weight(0.9f)
                         ) {
                             Text(
-                                text = cleanNavLabel(fleeBtn.label),
+                                text = cleanNavLabel(combatFleeBtn.label),
                                 color = DccColors.Gold,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -489,13 +497,10 @@ fun ActionDeck(
         }
     }
 
-    // Combat Skills Bottom Sheet
+    // Combat Skills Bottom Sheet — exclude ONLY the primary Fight and Run buttons (keep all op=fight&skill=... & auto=...)
     if (showCombatSkillsSheet) {
         val skillGroups = navGroups.mapNotNull { g ->
-            val filtered = g.items.filter {
-                !it.url.contains("op=fight", ignoreCase = true) &&
-                    !it.url.contains("op=run", ignoreCase = true)
-            }
+            val filtered = g.items.filter { it != combatFightBtn && it != combatFleeBtn }
             if (filtered.isEmpty()) null else g.copy(items = filtered)
         }
         ModalBottomSheet(
@@ -505,7 +510,7 @@ fun ActionDeck(
         ) {
             ActionSheetContent(
                 title = "Combat Skills & Options",
-                groups = skillGroups,
+                groups = skillGroups.ifEmpty { navGroups },
                 onSelect = { url ->
                     showCombatSkillsSheet = false
                     onNavigate(url)
