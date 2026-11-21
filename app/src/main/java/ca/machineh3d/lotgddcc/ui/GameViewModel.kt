@@ -7,6 +7,7 @@ import ca.machineh3d.lotgddcc.data.DccApiClient
 import ca.machineh3d.lotgddcc.data.ServerPreferences
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
+import ca.machineh3d.lotgddcc.notifications.NewDayScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +23,7 @@ data class GameUiState(
     val savedPassword: String = "",
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
+    val newDayNotificationsEnabled: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val page: DccPageResponse? = null,
@@ -32,6 +34,7 @@ data class GameUiState(
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val appContext = application.applicationContext
     private val prefs = ServerPreferences(application)
     private val api = DccApiClient(application)
 
@@ -50,11 +53,22 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     savedPassword = snap.savedPassword,
                     autoHealEnabled = snap.autoHealEnabled,
                     autoHealThresholdPercent = snap.autoHealThresholdPercent,
+                    newDayNotificationsEnabled = snap.newDayNotificationsEnabled,
                 )
             }
             if (snap.lastServerUrl.isNotBlank()) {
                 resumeSession(snap.lastServerUrl)
             }
+        }
+    }
+
+    private fun syncNewDayAlarm(resp: DccPageResponse) {
+        if (_uiState.value.newDayNotificationsEnabled && resp.nextNewDaySeconds > 0) {
+            NewDayScheduler.scheduleNextNewDay(
+                context = appContext,
+                delaySeconds = resp.nextNewDaySeconds,
+                secondsPerGameDay = resp.secondsPerGameDay,
+            )
         }
     }
 
@@ -64,6 +78,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val resp = api.fetchPage(url, "village.php")
                 if (resp.player?.loggedIn == true) {
+                    syncNewDayAlarm(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     _uiState.update { it.copy(isLoading = false, page = null) }
@@ -109,6 +124,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val resp = api.login(normalized, username, password)
                 if (resp.player?.loggedIn == true) {
+                    syncNewDayAlarm(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     val serverHint = resp.paragraphs
@@ -184,6 +200,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateNewDayNotifications(enabled: Boolean) {
+        _uiState.update { it.copy(newDayNotificationsEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.saveNewDayNotificationsEnabled(enabled)
+            if (enabled) {
+                val curPage = _uiState.value.page
+                if (curPage != null && curPage.nextNewDaySeconds > 0) {
+                    NewDayScheduler.scheduleNextNewDay(
+                        context = appContext,
+                        delaySeconds = curPage.nextNewDaySeconds,
+                        secondsPerGameDay = curPage.secondsPerGameDay,
+                    )
+                }
+            } else {
+                NewDayScheduler.cancel(appContext)
+            }
+        }
+    }
+
     fun navigate(url: String) {
         val baseUrl = _uiState.value.serverUrl
         if (baseUrl.isBlank() || url.isBlank()) return
@@ -193,6 +228,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val resp = api.fetchPage(baseUrl, url)
                 val loggedOut = resp.player == null && !_uiState.value.isInCreateFlow && resp.pageType == "login"
+                if (!loggedOut) {
+                    syncNewDayAlarm(resp)
+                }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -224,6 +262,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     method = form.method,
                     fields = values,
                 )
+                syncNewDayAlarm(resp)
                 _uiState.update {
                     it.copy(
                         isLoading = false,

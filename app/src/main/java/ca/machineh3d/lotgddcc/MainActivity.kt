@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     GameScreen(
+                        serverUrl = state.serverUrl,
                         page = activePage,
                         isLoading = state.isLoading,
                         errorMessage = state.errorMessage,
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
                         showSettingsSheet = state.showSettingsSheet,
                         autoHealEnabled = state.autoHealEnabled,
                         autoHealThresholdPercent = state.autoHealThresholdPercent,
+                        newDayNotificationsEnabled = state.newDayNotificationsEnabled,
                         onNavigate = { url -> vm.navigate(url) },
                         onSubmitForm = { form, values -> vm.submitForm(form, values) },
                         onRecoverBadNav = { vm.recoverBadNav() },
@@ -52,6 +54,7 @@ class MainActivity : ComponentActivity() {
                         onToggleStatsSheet = { vm.setStatsSheetVisible(it) },
                         onToggleSettingsSheet = { vm.setSettingsSheetVisible(it) },
                         onUpdateAutoHeal = { enabled, pct -> vm.updateAutoHealSettings(enabled, pct) },
+                        onToggleNewDayNotifications = { enabled -> vm.updateNewDayNotifications(enabled) },
                         onLogout = {
                             if (state.isInCreateFlow) vm.returnToLogin() else vm.logout()
                         },

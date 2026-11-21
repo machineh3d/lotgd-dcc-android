@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ca.machineh3d.lotgddcc.BuildConfig
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
 @Composable
@@ -96,6 +98,7 @@ fun LoginScreen(
             .fillMaxSize()
             .background(DccColors.Background)
             .imePadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(20.dp)
     ) {
@@ -136,7 +139,6 @@ fun LoginScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(18.dp)
                 ) {
-                    // Server URL with Recently Used URLs dropdown
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = serverUrl,
@@ -305,6 +307,15 @@ fun LoginScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(18.dp))
+
+            Text(
+                text = "App Version v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                color = DccColors.TextSecondary.copy(alpha = 0.75f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

@@ -11,6 +11,8 @@ data class DccPageResponse(
     val title: String = "Dungeon Crawler World: Earth",
     val badnav: Boolean = false,
     val recoveryUrl: String = "badnav.php",
+    val nextNewDaySeconds: Int = 0,
+    val secondsPerGameDay: Int = 0,
     val player: PlayerState? = null,
     val mail: MailState = MailState(),
     val navGroups: List<NavGroup> = emptyList(),

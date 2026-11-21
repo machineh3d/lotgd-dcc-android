@@ -1,5 +1,10 @@
 package ca.machineh3d.lotgddcc.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -30,9 +35,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import ca.machineh3d.lotgddcc.BuildConfig
 import ca.machineh3d.lotgddcc.model.CharStatSection
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
@@ -47,6 +55,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
+    serverUrl: String,
     page: DccPageResponse,
     isLoading: Boolean,
     errorMessage: String?,
@@ -54,6 +63,7 @@ fun GameScreen(
     showSettingsSheet: Boolean,
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
+    newDayNotificationsEnabled: Boolean,
     onNavigate: (String) -> Unit,
     onSubmitForm: (GameForm, Map<String, String>) -> Unit,
     onRecoverBadNav: () -> Unit,
@@ -61,6 +71,7 @@ fun GameScreen(
     onToggleStatsSheet: (Boolean) -> Unit,
     onToggleSettingsSheet: (Boolean) -> Unit,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
+    onToggleNewDayNotifications: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
@@ -182,9 +193,14 @@ fun GameScreen(
             containerColor = DccColors.Surface,
         ) {
             ClientSettingsSheetContent(
+                serverUrl = serverUrl,
+                bridgeApiVersion = page.apiVersion,
+                nextNewDaySeconds = page.nextNewDaySeconds,
                 autoHealEnabled = autoHealEnabled,
                 autoHealThresholdPercent = autoHealThresholdPercent,
+                newDayNotificationsEnabled = newDayNotificationsEnabled,
                 onUpdateAutoHeal = onUpdateAutoHeal,
+                onToggleNewDayNotifications = onToggleNewDayNotifications,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -193,15 +209,28 @@ fun GameScreen(
 
 @Composable
 private fun ClientSettingsSheetContent(
+    serverUrl: String,
+    bridgeApiVersion: Int,
+    nextNewDaySeconds: Int,
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
+    newDayNotificationsEnabled: Boolean,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
+    onToggleNewDayNotifications: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        onToggleNewDayNotifications(granted)
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         modifier = modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(bottom = 28.dp)
     ) {
         Text(
@@ -211,6 +240,7 @@ private fun ClientSettingsSheetContent(
             fontWeight = FontWeight.Bold,
         )
 
+        // 1. Auto-Heal Threshold Card
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -281,6 +311,121 @@ private fun ClientSettingsSheetContent(
                 }
             }
         }
+
+        // 2. New Game Day Notifications Card
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "New Game Day Notifications",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        val countdownHint = if (nextNewDaySeconds > 0) {
+                            "Alerts when Stamina resets (next day in ${formatDuration(nextNewDaySeconds)})."
+                        } else {
+                            "Alerts when a new in-game day begins (requires Bridge v4+)."
+                        }
+                        Text(
+                            text = countdownHint,
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = newDayNotificationsEnabled,
+                        onCheckedChange = { wantEnabled ->
+                            if (!wantEnabled) {
+                                onToggleNewDayNotifications(false)
+                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                val granted = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (granted) {
+                                    onToggleNewDayNotifications(true)
+                                } else {
+                                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            } else {
+                                onToggleNewDayNotifications(true)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Gold,
+                        )
+                    )
+                }
+            }
+        }
+
+        // 3. About App Card
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Text(
+                    text = "ABOUT APP",
+                    color = DccColors.Gold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
+                AboutRow("App", "Dungeon Crawler World (lotgd-dcc)")
+                AboutRow("Version", "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
+                AboutRow("Server", serverUrl.ifBlank { "Not connected" })
+                AboutRow("Bridge API", "v$bridgeApiVersion")
+                AboutRow("Author", "Devin Falconer (machineh3d)")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutRow(label: String, value: String) {
+    Row(
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = label,
+            color = DccColors.TextSecondary,
+            fontSize = 12.sp,
+        )
+        Text(
+            text = value,
+            color = DccColors.TextPrimary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+private fun formatDuration(totalSeconds: Int): String {
+    val hrs = totalSeconds / 3600
+    val mins = (totalSeconds % 3600) / 60
+    return when {
+        hrs > 0 -> "${hrs}h ${mins}m"
+        mins > 0 -> "${mins}m"
+        else -> "${totalSeconds}s"
     }
 }
 

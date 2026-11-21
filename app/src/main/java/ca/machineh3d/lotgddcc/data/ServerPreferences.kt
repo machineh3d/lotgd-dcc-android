@@ -19,6 +19,7 @@ data class ClientPrefsSnapshot(
     val savedPassword: String = "",
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
+    val newDayNotificationsEnabled: Boolean = false,
 )
 
 class ServerPreferences(private val context: Context) {
@@ -31,6 +32,7 @@ class ServerPreferences(private val context: Context) {
         private val KEY_SAVED_PASSWORD = stringPreferencesKey("saved_password")
         private val KEY_AUTO_HEAL_ENABLED = booleanPreferencesKey("auto_heal_enabled")
         private val KEY_AUTO_HEAL_THRESHOLD = intPreferencesKey("auto_heal_threshold")
+        private val KEY_NEW_DAY_NOTIFS = booleanPreferencesKey("new_day_notifications_enabled")
         private const val URL_DELIMITER = "\n"
         private const val MAX_RECENT_URLS = 8
     }
@@ -53,6 +55,7 @@ class ServerPreferences(private val context: Context) {
             savedPassword = if (remember) prefs[KEY_SAVED_PASSWORD].orEmpty() else "",
             autoHealEnabled = prefs[KEY_AUTO_HEAL_ENABLED] ?: true,
             autoHealThresholdPercent = (prefs[KEY_AUTO_HEAL_THRESHOLD] ?: 35).coerceIn(10, 90),
+            newDayNotificationsEnabled = prefs[KEY_NEW_DAY_NOTIFS] ?: false,
         )
     }
 
@@ -116,6 +119,12 @@ class ServerPreferences(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[KEY_AUTO_HEAL_ENABLED] = enabled
             prefs[KEY_AUTO_HEAL_THRESHOLD] = thresholdPercent.coerceIn(10, 90)
+        }
+    }
+
+    suspend fun saveNewDayNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NEW_DAY_NOTIFS] = enabled
         }
     }
 
