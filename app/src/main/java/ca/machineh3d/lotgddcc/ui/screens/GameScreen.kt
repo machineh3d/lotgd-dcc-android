@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -240,7 +242,6 @@ private fun ClientSettingsSheetContent(
             fontWeight = FontWeight.Bold,
         )
 
-        // 1. Auto-Heal Threshold Card
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -312,7 +313,6 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // 2. New Game Day Notifications Card
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -372,7 +372,6 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // 3. About App Card
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -456,6 +455,13 @@ private fun CrawlerStatsSheetContent(
             )
         } else {
             for (sec in sections) {
+                // Filter out any raw concatenated timezone dropdowns if older bridge is still running
+                val cleanItems = sec.items.filterNot { item ->
+                    item.value.contains("PT (Vancouver)MT (Edmonton)") ||
+                        (item.label.isBlank() && item.value.isBlank())
+                }
+                if (cleanItems.isEmpty()) continue
+
                 Surface(
                     color = DccColors.SurfaceVariant,
                     shape = RoundedCornerShape(12.dp),
@@ -469,30 +475,57 @@ private fun CrawlerStatsSheetContent(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,
                         )
-                        Spacer(Modifier.height(6.dp))
-                        sec.items.forEachIndexed { idx, item ->
+                        Spacer(Modifier.height(8.dp))
+                        cleanItems.forEachIndexed { idx, item ->
                             if (idx > 0) {
                                 HorizontalDivider(
                                     color = DccColors.Outline.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    modifier = Modifier.padding(vertical = 6.dp)
                                 )
                             }
-                            Row(
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = item.label,
-                                    color = DccColors.TextSecondary,
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = item.value,
-                                    color = DccColors.TextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                            val isLongValue = item.value.length > 22
+                            if (isLongValue) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    if (item.label.isNotBlank()) {
+                                        Text(
+                                            text = item.label,
+                                            color = DccColors.TextSecondary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    }
+                                    Text(
+                                        text = item.value,
+                                        color = DccColors.TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        lineHeight = 18.sp,
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = item.label,
+                                        color = DccColors.TextSecondary,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = item.value,
+                                        color = DccColors.TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.End,
+                                    )
+                                }
                             }
                         }
                     }
