@@ -150,7 +150,7 @@ fun TopHudBar(
                 }
             }
 
-            // Row 2: Pinned HP bar + Stamina + Gold Credits + Sponsor Tokens
+            // Row 2: Pinned HP bar + XP-to-Trainer bar + Stamina + Gold Credits + Sponsor Tokens
             if (player != null) {
                 Spacer(Modifier.height(6.dp))
                 val hpFraction = (player.hp.toFloat() / player.maxHp.coerceAtLeast(1).toFloat())
@@ -162,12 +162,37 @@ fun TopHudBar(
                     else -> DccColors.Crimson
                 }
 
+                val isMaxLevel = player.level >= player.maxLevel
+                val expBase = player.expCurrentLevel.coerceAtLeast(0)
+                val expTarget = player.expNextLevel.coerceAtLeast(expBase + 1)
+                val expReady = !isMaxLevel && player.experience >= expTarget
+                val expFraction = when {
+                    isMaxLevel || expReady -> 1f
+                    else -> ((player.experience - expBase).toFloat() / (expTarget - expBase).toFloat())
+                        .coerceIn(0f, 1f)
+                }
+                val expColor = when {
+                    isMaxLevel -> DccColors.Crimson
+                    expReady -> DccColors.Gold
+                    else -> DccColors.Violet
+                }
+                val expLeftLabel = when {
+                    isMaxLevel -> "MAX LV · STAIRWELL"
+                    expReady -> "TRAINER READY!"
+                    else -> "XP"
+                }
+                val expRightLabel = when {
+                    isMaxLevel -> formatCompact(player.experience)
+                    else -> "${formatCompact(player.experience)}/${formatCompact(expTarget)}"
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        // HP Bar
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
@@ -193,6 +218,37 @@ fun TopHudBar(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+
+                        Spacer(Modifier.height(5.dp))
+
+                        // XP Bar (progress toward next trainer challenge)
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = expLeftLabel,
+                                color = expColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = expRightLabel,
+                                color = if (expReady) DccColors.Gold else DccColors.TextSecondary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        LinearProgressIndicator(
+                            progress = { expFraction },
+                            color = expColor,
+                            trackColor = DccColors.SurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
                                 .clip(RoundedCornerShape(3.dp))
                         )
                     }
