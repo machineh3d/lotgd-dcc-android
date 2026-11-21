@@ -16,7 +16,21 @@ data class DccPageResponse(
     val navGroups: List<NavGroup> = emptyList(),
     val charStats: List<CharStatSection> = emptyList(),
     val paragraphs: List<List<TextSpan>> = emptyList(),
+    val tables: List<GameTable> = emptyList(),
     val forms: List<GameForm> = emptyList(),
+)
+
+@Serializable
+data class GameTable(
+    val headers: List<String> = emptyList(),
+    val rows: List<TableRowData> = emptyList(),
+)
+
+@Serializable
+data class TableRowData(
+    val cells: List<String> = emptyList(),
+    val actionUrl: String? = null,
+    val actionLabel: String? = null,
 )
 
 @Serializable

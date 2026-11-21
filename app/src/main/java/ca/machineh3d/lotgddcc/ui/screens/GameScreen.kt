@@ -34,6 +34,7 @@ import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
 import ca.machineh3d.lotgddcc.ui.components.NarrativeView
 import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
+import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
@@ -53,8 +54,7 @@ fun GameScreen(
 ) {
     val scrollState = rememberScrollState()
 
-    // Scroll back to top whenever a new page loads
-    LaunchedEffect(page.currentUrl, page.title, page.paragraphs.size) {
+    LaunchedEffect(page.currentUrl, page.title, page.paragraphs.size, page.tables.size) {
         scrollState.scrollTo(0)
     }
 
@@ -125,6 +125,14 @@ fun GameScreen(
                     paragraphs = page.paragraphs,
                     onLinkClick = onNavigate,
                 )
+
+                if (page.tables.isNotEmpty()) {
+                    NativeTableCards(
+                        tables = page.tables,
+                        enabled = !isLoading,
+                        onActionClick = onNavigate,
+                    )
+                }
 
                 for (form in page.forms) {
                     NativeFormCard(
