@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ca.machineh3d.lotgddcc.model.NavGroup
 import ca.machineh3d.lotgddcc.model.NavItem
+import ca.machineh3d.lotgddcc.model.PlayerState
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
 private val HOTKEY_PREFIX_REGEX = Regex("""^\([A-Za-z0-9?/,]\)\s*""")
@@ -62,6 +64,7 @@ private fun compactButtonLabel(raw: String): String {
     val clean = cleanNavLabel(raw)
     return when {
         clean.startsWith("Return to ", ignoreCase = true) && clean.length > 18 -> "Return"
+        clean.equals("Look for something to kill", ignoreCase = true) -> "Look for a Fight"
         else -> clean
     }
 }
@@ -74,6 +77,9 @@ fun ActionDeck(
     pageType: String,
     badnav: Boolean,
     navGroups: List<NavGroup>,
+    player: PlayerState?,
+    autoHealEnabled: Boolean,
+    autoHealThresholdPercent: Int,
     enabled: Boolean,
     onNavigate: (String) -> Unit,
     onRecoverBadNav: () -> Unit,
@@ -273,7 +279,7 @@ fun ActionDeck(
                 return@Column
             }
 
-            // 3. Subpages: slim 1-row bar (Return + Primary + All Actions sheet when 3+ links)
+            // 3. Subpages: slim 1-row bar with smart Corridors primary button (Hunt vs Auto-Heal)
             val allItems = navGroups.flatMap { it.items }
             if (allItems.size <= 2) {
                 Row(
@@ -292,7 +298,7 @@ fun ActionDeck(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
-                                    text = cleanNavLabel(item.label),
+                                    text = compactButtonLabel(item.label),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -333,7 +339,26 @@ fun ActionDeck(
                 }
             } else {
                 val returnItem = allItems.firstOrNull { isReturnLink(it) }
-                val primaryItem = allItems.firstOrNull { it != returnItem }
+                val searchFightItem = allItems.firstOrNull { isHuntSearchLink(it) }
+                val healerItem = allItems.firstOrNull { isHealerLink(it) }
+
+                val hpPct = if (player != null && player.maxHp > 0) {
+                    (player.hp * 100) / player.maxHp
+                } else {
+                    100
+                }
+                val shouldAutoHeal = autoHealEnabled &&
+                    player != null &&
+                    player.alive &&
+                    hpPct <= autoHealThresholdPercent &&
+                    healerItem != null
+
+                val primaryItem = when {
+                    shouldAutoHeal -> healerItem
+                    searchFightItem != null -> searchFightItem
+                    else -> allItems.firstOrNull { it != returnItem }
+                }
+                val isAutoHealButton = shouldAutoHeal && primaryItem == healerItem
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -351,7 +376,7 @@ fun ActionDeck(
                             ),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 11.dp),
-                            modifier = Modifier.weight(0.85f)
+                            modifier = Modifier.weight(0.8f)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -373,13 +398,24 @@ fun ActionDeck(
                         Button(
                             enabled = enabled,
                             onClick = { onNavigate(primaryItem.url) },
-                            colors = ButtonDefaults.buttonColors(containerColor = DccColors.Crimson),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isAutoHealButton) DccColors.Emerald else DccColors.Crimson,
+                                contentColor = if (isAutoHealButton) DccColors.Background else Color.White,
+                            ),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 11.dp),
-                            modifier = Modifier.weight(1.25f)
+                            modifier = Modifier.weight(1.35f)
                         ) {
+                            if (isAutoHealButton) {
+                                Icon(
+                                    imageVector = Icons.Filled.Favorite,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                            }
                             Text(
-                                text = cleanNavLabel(primaryItem.label),
+                                text = compactButtonLabel(primaryItem.label),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
@@ -394,7 +430,7 @@ fun ActionDeck(
                         border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.7f)),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 11.dp),
-                        modifier = Modifier.weight(0.9f)
+                        modifier = Modifier.weight(0.85f)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Menu,
@@ -590,6 +626,19 @@ private fun isReturnLink(item: NavItem): Boolean {
         lbl.startsWith("back") ||
         url == "village.php" ||
         url.startsWith("village.php?")
+}
+
+private fun isHuntSearchLink(item: NavItem): Boolean {
+    val lbl = cleanNavLabel(item.label).lowercase()
+    val url = item.url.lowercase()
+    return (url.contains("forest.php") && url.contains("op=search") && !url.contains("type=slum") && !url.contains("type=thrill")) ||
+        lbl.contains("look for something to kill")
+}
+
+private fun isHealerLink(item: NavItem): Boolean {
+    val lbl = cleanNavLabel(item.label).lowercase()
+    val url = item.url.lowercase()
+    return url.contains("healer.php") || lbl.contains("healer")
 }
 
 private fun partitionHubGroups(

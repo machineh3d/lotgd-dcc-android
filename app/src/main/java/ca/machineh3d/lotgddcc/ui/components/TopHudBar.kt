@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -48,6 +49,7 @@ fun TopHudBar(
     mail: MailState,
     onOpenStats: () -> Unit,
     onOpenComms: () -> Unit,
+    onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Surface(
@@ -62,7 +64,7 @@ fun TopHudBar(
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 7.dp)
         ) {
-            // Row 1: Floor/Level pill, Area Title, Comms & Stats icons
+            // Row 1: Floor/Level pill, Area Title, Comms, Stats, Settings & Logout icons
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -73,7 +75,7 @@ fun TopHudBar(
                             .clip(RoundedCornerShape(6.dp))
                             .background(DccColors.Crimson.copy(alpha = 0.2f))
                             .clickable(onClick = onOpenStats)
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 7.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "FL ${player.floor} · LV ${player.level}",
@@ -82,7 +84,7 @@ fun TopHudBar(
                             fontWeight = FontWeight.Bold,
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(7.dp))
                 }
 
                 Column(
@@ -93,7 +95,7 @@ fun TopHudBar(
                     Text(
                         text = title,
                         color = DccColors.TextPrimary,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -114,7 +116,7 @@ fun TopHudBar(
                 }
 
                 if (player != null) {
-                    IconButton(onClick = onOpenComms, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = onOpenComms, modifier = Modifier.size(34.dp)) {
                         BadgedBox(
                             badge = {
                                 if (mail.unread > 0) {
@@ -128,24 +130,36 @@ fun TopHudBar(
                                 imageVector = Icons.Filled.Email,
                                 contentDescription = "Syndicate Comms",
                                 tint = if (mail.unread > 0) DccColors.Gold else DccColors.TextSecondary,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }
 
-                    IconButton(onClick = onOpenStats, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = onOpenStats, modifier = Modifier.size(34.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Person,
                             contentDescription = "Crawler Stats",
                             tint = DccColors.Cyan,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Client Settings",
+                            tint = DccColors.TextSecondary,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
 
-                IconButton(onClick = onLogout, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = onLogout, modifier = Modifier.size(34.dp)) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Logout,
                         contentDescription = "Log Out",
                         tint = DccColors.TextSecondary,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -191,7 +205,6 @@ fun TopHudBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Side-by-side HP Bar
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -224,7 +237,6 @@ fun TopHudBar(
                         )
                     }
 
-                    // Side-by-side XP-to-Trainer Bar
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,

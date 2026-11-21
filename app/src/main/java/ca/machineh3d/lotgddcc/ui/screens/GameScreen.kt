@@ -19,11 +19,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +42,7 @@ import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
 import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,11 +51,16 @@ fun GameScreen(
     isLoading: Boolean,
     errorMessage: String?,
     showStatsSheet: Boolean,
+    showSettingsSheet: Boolean,
+    autoHealEnabled: Boolean,
+    autoHealThresholdPercent: Int,
     onNavigate: (String) -> Unit,
     onSubmitForm: (GameForm, Map<String, String>) -> Unit,
     onRecoverBadNav: () -> Unit,
     onOpenComms: () -> Unit,
     onToggleStatsSheet: (Boolean) -> Unit,
+    onToggleSettingsSheet: (Boolean) -> Unit,
+    onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onLogout: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
@@ -68,6 +79,7 @@ fun GameScreen(
                     mail = page.mail,
                     onOpenStats = { onToggleStatsSheet(true) },
                     onOpenComms = onOpenComms,
+                    onOpenSettings = { onToggleSettingsSheet(true) },
                     onLogout = onLogout,
                 )
                 if (isLoading) {
@@ -86,6 +98,9 @@ fun GameScreen(
                 pageType = page.pageType,
                 badnav = page.badnav,
                 navGroups = page.navGroups,
+                player = page.player,
+                autoHealEnabled = autoHealEnabled,
+                autoHealThresholdPercent = autoHealThresholdPercent,
                 enabled = !isLoading,
                 onNavigate = onNavigate,
                 onRecoverBadNav = onRecoverBadNav,
@@ -157,6 +172,114 @@ fun GameScreen(
                 sections = page.charStats,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
+        }
+    }
+
+    if (showSettingsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { onToggleSettingsSheet(false) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = DccColors.Surface,
+        ) {
+            ClientSettingsSheetContent(
+                autoHealEnabled = autoHealEnabled,
+                autoHealThresholdPercent = autoHealThresholdPercent,
+                onUpdateAutoHeal = onUpdateAutoHeal,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClientSettingsSheetContent(
+    autoHealEnabled: Boolean,
+    autoHealThresholdPercent: Int,
+    onUpdateAutoHeal: (Boolean, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 28.dp)
+    ) {
+        Text(
+            text = "Crawler HUD Settings",
+            color = DccColors.Cyan,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-Switch Corridors Button to Healer",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Replaces 'Look for a Fight' with Healer's Hut when HP drops below threshold.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = autoHealEnabled,
+                        onCheckedChange = { onUpdateAutoHeal(it, autoHealThresholdPercent) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Emerald,
+                        )
+                    )
+                }
+
+                if (autoHealEnabled) {
+                    HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Low-HP Heal Threshold",
+                            color = DccColors.TextSecondary,
+                            fontSize = 13.sp,
+                        )
+                        Text(
+                            text = "$autoHealThresholdPercent% HP",
+                            color = DccColors.Emerald,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Slider(
+                        value = autoHealThresholdPercent.toFloat(),
+                        onValueChange = { raw ->
+                            val snapped = ((raw / 5f).roundToInt() * 5).coerceIn(10, 90)
+                            onUpdateAutoHeal(true, snapped)
+                        },
+                        valueRange = 10f..90f,
+                        steps = 15,
+                        colors = SliderDefaults.colors(
+                            thumbColor = DccColors.Emerald,
+                            activeTrackColor = DccColors.Emerald,
+                        )
+                    )
+                }
+            }
         }
     }
 }

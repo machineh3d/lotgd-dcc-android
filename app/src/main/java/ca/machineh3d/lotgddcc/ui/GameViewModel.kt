@@ -16,12 +16,18 @@ import kotlinx.coroutines.launch
 
 data class GameUiState(
     val serverUrl: String = "",
+    val recentServerUrls: List<String> = emptyList(),
+    val rememberCredentials: Boolean = false,
     val savedUsername: String = "",
+    val savedPassword: String = "",
+    val autoHealEnabled: Boolean = true,
+    val autoHealThresholdPercent: Int = 35,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val page: DccPageResponse? = null,
     val isInCreateFlow: Boolean = false,
     val showStatsSheet: Boolean = false,
+    val showSettingsSheet: Boolean = false,
 )
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,14 +40,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            val savedUrl = prefs.serverUrlFlow.first()
-            val savedUser = prefs.lastUsernameFlow.first()
+            val snap = prefs.prefsFlow.first()
             _uiState.update {
-                it.copy(serverUrl = savedUrl, savedUsername = savedUser)
+                it.copy(
+                    serverUrl = snap.lastServerUrl,
+                    recentServerUrls = snap.recentServerUrls,
+                    rememberCredentials = snap.rememberCredentials,
+                    savedUsername = snap.savedUsername,
+                    savedPassword = snap.savedPassword,
+                    autoHealEnabled = snap.autoHealEnabled,
+                    autoHealThresholdPercent = snap.autoHealThresholdPercent,
+                )
             }
-            if (savedUrl.isNotBlank()) {
-                // Attempt to resume an existing PHP session automatically
-                resumeSession(savedUrl)
+            if (snap.lastServerUrl.isNotBlank()) {
+                resumeSession(snap.lastServerUrl)
             }
         }
     }
@@ -57,13 +69,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.update { it.copy(isLoading = false, page = null) }
                 }
             } catch (_: Exception) {
-                // Silent fallback to login screen on cold start
                 _uiState.update { it.copy(isLoading = false, page = null) }
             }
         }
     }
 
-    fun login(serverUrl: String, username: String, password: String) {
+    fun login(
+        serverUrl: String,
+        username: String,
+        password: String,
+        rememberCredentials: Boolean,
+    ) {
         val normalized = prefs.normalizeUrl(serverUrl)
         if (normalized.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Enter your lotgd-dcc server URL first.") }
@@ -75,16 +91,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
+            prefs.saveConnection(normalized, username, password, rememberCredentials)
+            val updatedSnap = prefs.prefsFlow.first()
+
             _uiState.update {
                 it.copy(
                     serverUrl = normalized,
+                    recentServerUrls = updatedSnap.recentServerUrls,
+                    rememberCredentials = rememberCredentials,
                     savedUsername = username.trim(),
+                    savedPassword = if (rememberCredentials) password else "",
                     isLoading = true,
                     errorMessage = null,
                     isInCreateFlow = false,
                 )
             }
-            prefs.saveConnection(normalized, username)
             try {
                 val resp = api.login(normalized, username, password)
                 if (resp.player?.loggedIn == true) {
@@ -122,8 +143,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            _uiState.update { it.copy(serverUrl = normalized, isLoading = true, errorMessage = null) }
             prefs.saveServerUrl(normalized)
+            val updatedSnap = prefs.prefsFlow.first()
+            _uiState.update {
+                it.copy(
+                    serverUrl = normalized,
+                    recentServerUrls = updatedSnap.recentServerUrls,
+                    isLoading = true,
+                    errorMessage = null,
+                )
+            }
             try {
                 val resp = api.fetchPage(normalized, "create.php")
                 _uiState.update {
@@ -134,6 +163,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(isLoading = false, errorMessage = e.message ?: "Failed to load registration.")
                 }
             }
+        }
+    }
+
+    fun removeRecentUrl(url: String) {
+        viewModelScope.launch {
+            prefs.removeRecentUrl(url)
+            val snap = prefs.prefsFlow.first()
+            _uiState.update { it.copy(recentServerUrls = snap.recentServerUrls) }
+        }
+    }
+
+    fun updateAutoHealSettings(enabled: Boolean, thresholdPercent: Int) {
+        val clamped = thresholdPercent.coerceIn(10, 90)
+        _uiState.update {
+            it.copy(autoHealEnabled = enabled, autoHealThresholdPercent = clamped)
+        }
+        viewModelScope.launch {
+            prefs.saveAutoHealSettings(enabled, clamped)
         }
     }
 
@@ -206,14 +253,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(showStatsSheet = visible) }
     }
 
-    fun clearError() {
-        _uiState.update { it.copy(errorMessage = null) }
+    fun setSettingsSheetVisible(visible: Boolean) {
+        _uiState.update { it.copy(showSettingsSheet = visible) }
     }
 
     fun returnToLogin() {
         api.clearSession()
         _uiState.update {
-            it.copy(page = null, isInCreateFlow = false, showStatsSheet = false, errorMessage = null)
+            it.copy(
+                page = null,
+                isInCreateFlow = false,
+                showStatsSheet = false,
+                showSettingsSheet = false,
+                errorMessage = null,
+            )
         }
     }
 
@@ -225,7 +278,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
             api.clearSession()
             _uiState.update {
-                it.copy(page = null, isInCreateFlow = false, showStatsSheet = false, errorMessage = null)
+                it.copy(
+                    page = null,
+                    isInCreateFlow = false,
+                    showStatsSheet = false,
+                    showSettingsSheet = false,
+                    errorMessage = null,
+                )
             }
         }
     }
