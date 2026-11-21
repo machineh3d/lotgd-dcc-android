@@ -60,7 +60,7 @@ fun TopHudBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp, vertical = 7.dp)
         ) {
             // Row 1: Floor/Level pill, Area Title, Comms & Stats icons
             Row(
@@ -114,7 +114,7 @@ fun TopHudBar(
                 }
 
                 if (player != null) {
-                    IconButton(onClick = onOpenComms, modifier = Modifier.size(38.dp)) {
+                    IconButton(onClick = onOpenComms, modifier = Modifier.size(36.dp)) {
                         BadgedBox(
                             badge = {
                                 if (mail.unread > 0) {
@@ -132,7 +132,7 @@ fun TopHudBar(
                         }
                     }
 
-                    IconButton(onClick = onOpenStats, modifier = Modifier.size(38.dp)) {
+                    IconButton(onClick = onOpenStats, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Person,
                             contentDescription = "Crawler Stats",
@@ -141,7 +141,7 @@ fun TopHudBar(
                     }
                 }
 
-                IconButton(onClick = onLogout, modifier = Modifier.size(38.dp)) {
+                IconButton(onClick = onLogout, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Logout,
                         contentDescription = "Log Out",
@@ -150,7 +150,7 @@ fun TopHudBar(
                 }
             }
 
-            // Row 2: Pinned HP bar + XP-to-Trainer bar + Stamina + Gold Credits + Sponsor Tokens
+            // Row 2: Compact side-by-side HP bar + XP-to-Trainer bar + Stamina / Gold / Tokens
             if (player != null) {
                 Spacer(Modifier.height(6.dp))
                 val hpFraction = (player.hp.toFloat() / player.maxHp.coerceAtLeast(1).toFloat())
@@ -177,8 +177,8 @@ fun TopHudBar(
                     else -> DccColors.Violet
                 }
                 val expLeftLabel = when {
-                    isMaxLevel -> "MAX LV · STAIRWELL"
-                    expReady -> "TRAINER READY!"
+                    isMaxLevel -> "MAX"
+                    expReady -> "TRAIN!"
                     else -> "XP"
                 }
                 val expRightLabel = when {
@@ -188,26 +188,28 @@ fun TopHudBar(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // Side-by-side HP Bar
                     Column(modifier = Modifier.weight(1f)) {
-                        // HP Bar
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = if (player.alive) "HP" else "RECONSTRUCTION",
+                                text = if (player.alive) "HP" else "DEAD",
                                 color = hpColor,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
                             )
                             Text(
                                 text = "${player.hp}/${player.maxHp}",
                                 color = DccColors.TextPrimary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
                             )
                         }
                         Spacer(Modifier.height(2.dp))
@@ -220,10 +222,10 @@ fun TopHudBar(
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
                         )
+                    }
 
-                        Spacer(Modifier.height(5.dp))
-
-                        // XP Bar (progress toward next trainer challenge)
+                    // Side-by-side XP-to-Trainer Bar
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
@@ -233,12 +235,14 @@ fun TopHudBar(
                                 color = expColor,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
+                                maxLines = 1,
                             )
                             Text(
                                 text = expRightLabel,
                                 color = if (expReady) DccColors.Gold else DccColors.TextSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
                             )
                         }
                         Spacer(Modifier.height(2.dp))
@@ -248,7 +252,7 @@ fun TopHudBar(
                             trackColor = DccColors.SurfaceVariant,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(5.dp)
+                                .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
                         )
                     }
@@ -287,22 +291,23 @@ private fun HudMetricPill(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(7.dp))
             .background(DccColors.SurfaceVariant)
-            .padding(horizontal = 7.dp, vertical = 4.dp)
+            .padding(horizontal = 5.dp, vertical = 4.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(13.dp)
+            modifier = Modifier.size(12.dp)
         )
-        Spacer(Modifier.width(3.dp))
+        Spacer(Modifier.width(2.dp))
         Text(
             text = value,
             color = DccColors.TextPrimary,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
         )
     }
 }
