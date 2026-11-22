@@ -1,15 +1,29 @@
 package ca.machineh3d.lotgddcc.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.LinkAnnotation
@@ -31,6 +45,13 @@ private val COMPACT_COMBAT_SKIP_REGEX = Regex(
     RegexOption.IGNORE_CASE,
 )
 
+// Matches jammed room resource lines like:
+// "Gold Credits: 1,058Sponsor Tokens: 4Daily Workbench Crafts Left: 2 / 2"
+private val STAT_PAIR_REGEX = Regex(
+    """([A-Za-z][A-Za-z0-9 '&/\-]{2,34}):\s*([0-9][0-9,\./\s]*)(?=[A-Z]|$)"""
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NarrativeView(
     paragraphs: List<List<TextSpan>>,
@@ -55,9 +76,24 @@ fun NarrativeView(
                 continue
             }
 
-            val isSystemAiBanner = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
-                plain.contains("SECRET ACHIEVEMENT", ignoreCase = true) ||
-                plain.contains("LOOT BOX", ignoreCase = true)
+            // Detect jammed room resource/counter lines and render as clean Syndicate stat pills
+            val statPairs = extractRoomResourcePills(plain, spans)
+            if (statPairs != null) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    for ((label, value) in statPairs) {
+                        RoomResourcePill(label = label, value = value)
+                    }
+                }
+                continue
+            }
+
+            val isLootBox = plain.contains("LOOT BOX", ignoreCase = true)
+            val isAchievement = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
+                plain.contains("SECRET ACHIEVEMENT", ignoreCase = true)
 
             val annotated = buildAnnotatedString {
                 for (span in spans) {
@@ -97,19 +133,53 @@ fun NarrativeView(
                 }
             }
 
-            if (isSystemAiBanner) {
+            if (isAchievement || isLootBox) {
+                val accent = if (isLootBox) DccColors.Cyan else DccColors.Gold
+                val badgeTitle = if (isLootBox) "SPONSOR LOOT BOX" else "SYSTEM AI ACHIEVEMENT"
+                val icon = if (isLootBox) Icons.Filled.CardGiftcard else Icons.Filled.EmojiEvents
+
                 Surface(
-                    color = DccColors.Gold.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, DccColors.Gold.copy(alpha = 0.55f)),
-                    shape = RoundedCornerShape(10.dp),
+                    color = accent.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = annotated,
-                        fontSize = fontSizeSp.sp,
-                        lineHeight = lineHeightSp.sp,
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.padding(12.dp)
-                    )
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(accent.copy(alpha = 0.18f))
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = badgeTitle,
+                                tint = accent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = badgeTitle,
+                                color = accent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 1.1.sp,
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                text = annotated,
+                                fontSize = fontSizeSp.sp,
+                                lineHeight = lineHeightSp.sp,
+                                color = DccColors.TextPrimary,
+                            )
+                        }
+                    }
                 }
             } else {
                 Text(
@@ -123,8 +193,63 @@ fun NarrativeView(
     }
 }
 
+private fun extractRoomResourcePills(
+    plain: String,
+    spans: List<TextSpan>,
+): List<Pair<String, String>>? {
+    // Only split short non-link status bars containing 2+ "Label: Number" pairs
+    if (plain.length > 160 || spans.any { !it.link.isNullOrBlank() }) return null
+    val matches = STAT_PAIR_REGEX.findAll(plain).toList()
+    if (matches.size < 2) return null
+
+    // Confirm most of the string is covered by these stat pairs
+    val matchedLen = matches.sumOf { it.value.length }
+    if (matchedLen < plain.length * 0.72) return null
+
+    return matches.map { m ->
+        m.groupValues[1].trim() to m.groupValues[2].trim()
+    }
+}
+
+@Composable
+private fun RoomResourcePill(
+    label: String,
+    value: String,
+) {
+    val lc = label.lowercase()
+    val accent = when {
+        lc.contains("gold") || lc.contains("credit") -> DccColors.Gold
+        lc.contains("token") || lc.contains("gem") -> DccColors.Violet
+        lc.contains("hp") || lc.contains("health") -> DccColors.Emerald
+        else -> DccColors.Cyan
+    }
+
+    Surface(
+        color = DccColors.Surface,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = label.uppercase(),
+                color = DccColors.TextSecondary,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.7.sp,
+            )
+            Text(
+                text = value,
+                color = accent,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+    }
+}
+
 private fun adaptColorForLightTheme(color: Color): Color {
-    // Darken bright neon/pastel LotGD text colors so they remain crisp on light backgrounds
     val lum = color.luminance()
     return if (lum > 0.42f) {
         val factor = if (lum > 0.78f) 0.42f else 0.58f

@@ -30,6 +30,11 @@ import androidx.compose.ui.unit.sp
 import ca.machineh3d.lotgddcc.model.GameTable
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
+private val HEADER_KEYWORDS = listOf(
+    "level", "cost", "upgrade", "function", "damage", "defense",
+    "station", "item", "weapon", "armor", "price", "effect", "status", "name",
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NativeTableCards(
@@ -43,26 +48,73 @@ fun NativeTableCards(
         modifier = modifier.fillMaxWidth()
     ) {
         for (table in tables) {
-            val headers = table.headers
+            // Promote <td>-only header rows (e.g. Personal Space "Station / Upgrade | Level | Function | Upgrade Cost")
+            val firstRow = table.rows.firstOrNull()
+            val promoteFirstRow = table.headers.isEmpty() &&
+                firstRow != null &&
+                firstRow.actionUrl.isNullOrBlank() &&
+                firstRow.cells.size >= 2 &&
+                firstRow.cells.count { cell ->
+                    val lc = cell.trim().lowercase()
+                    HEADER_KEYWORDS.any { lc.contains(it) }
+                } >= 2
+
+            val headers = if (promoteFirstRow && firstRow != null) firstRow.cells else table.headers
+            val dataRows = if (promoteFirstRow) table.rows.drop(1) else table.rows
+
             val isVendorTable = headers.any {
                 it.equals("Cost", ignoreCase = true) ||
                     it.equals("Damage", ignoreCase = true) ||
                     it.equals("Defense", ignoreCase = true)
             }
 
-            for (row in table.rows) {
+            for (row in dataRows) {
                 if (row.cells.isEmpty()) continue
 
-                val primaryTitle = row.cells.firstOrNull().orEmpty()
+                val primaryTitle = row.cells.firstOrNull().orEmpty().trim()
                 val detailCells = row.cells.drop(1)
                 val actionUrl = row.actionUrl
+                val actionLabel = row.actionLabel?.trim().orEmpty()
                 val canTap = enabled && !actionUrl.isNullOrBlank()
+
+                // Split short stat/cost pills vs long descriptive prose so descriptions stay readable
+                val shortChips = mutableListOf<Triple<String, String, Color>>()
+                val descriptions = mutableListOf<String>()
+
+                detailCells.forEachIndexed { idx, rawVal ->
+                    var cleaned = rawVal.trim()
+                    if (actionLabel.isNotBlank() && cleaned.startsWith(actionLabel, ignoreCase = true)) {
+                        cleaned = cleaned.removePrefix(actionLabel).trim()
+                    }
+                    // Also strip any glued "[Install Lv 1]..." bracket action prefix
+                    cleaned = cleaned.replace(Regex("""^\[[^\]]{2,24}\]\s*"""), "").trim()
+                    if (cleaned.isBlank()) return@forEachIndexed
+
+                    val hdr = headers.getOrNull(idx + 1).orEmpty().trim()
+                    if (cleaned.length > 44 || hdr.contains("function", ignoreCase = true) || hdr.contains("desc", ignoreCase = true)) {
+                        descriptions.add(cleaned)
+                    } else {
+                        val pillColor = when {
+                            hdr.contains("cost", ignoreCase = true) ||
+                                hdr.contains("gold", ignoreCase = true) ||
+                                cleaned.contains("G", ignoreCase = false) && cleaned.any { it.isDigit() } -> DccColors.Gold
+                            cleaned.contains("token", ignoreCase = true) ||
+                                hdr.contains("gem", ignoreCase = true) -> DccColors.Violet
+                            hdr.contains("damage", ignoreCase = true) ||
+                                hdr.contains("atk", ignoreCase = true) -> DccColors.Crimson
+                            hdr.contains("defense", ignoreCase = true) ||
+                                hdr.contains("def", ignoreCase = true) -> DccColors.Emerald
+                            else -> DccColors.Cyan
+                        }
+                        shortChips.add(Triple(hdr, cleaned, pillColor))
+                    }
+                }
 
                 Surface(
                     color = DccColors.Surface,
                     border = BorderStroke(
                         width = 1.dp,
-                        color = if (canTap) DccColors.Cyan.copy(alpha = 0.5f) else DccColors.Outline
+                        color = if (canTap) DccColors.Cyan.copy(alpha = 0.45f) else DccColors.Outline
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -75,64 +127,70 @@ fun NativeTableCards(
                             }
                         )
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .padding(horizontal = 12.dp, vertical = 11.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = primaryTitle,
-                                color = if (canTap) DccColors.TextPrimary else DccColors.TextSecondary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                lineHeight = 20.sp,
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = primaryTitle,
+                                    color = if (canTap) DccColors.TextPrimary else DccColors.TextSecondary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 20.sp,
+                                )
 
-                            if (detailCells.isNotEmpty()) {
-                                Spacer(Modifier.height(6.dp))
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    detailCells.forEachIndexed { idx, value ->
-                                        if (value.isBlank()) return@forEachIndexed
-                                        val hdr = headers.getOrNull(idx + 1).orEmpty()
-                                        val pillColor = when {
-                                            hdr.contains("cost", ignoreCase = true) ||
-                                                hdr.contains("gold", ignoreCase = true) -> DccColors.Gold
-                                            hdr.contains("damage", ignoreCase = true) ||
-                                                hdr.contains("atk", ignoreCase = true) -> DccColors.Crimson
-                                            hdr.contains("defense", ignoreCase = true) ||
-                                                hdr.contains("def", ignoreCase = true) -> DccColors.Emerald
-                                            else -> DccColors.Cyan
+                                if (shortChips.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        for ((hdr, value, accent) in shortChips) {
+                                            TableStatChip(
+                                                label = hdr,
+                                                value = value,
+                                                accent = accent,
+                                            )
                                         }
-                                        TableStatChip(
-                                            label = hdr,
-                                            value = value,
-                                            accent = pillColor
-                                        )
                                     }
+                                }
+                            }
+
+                            if (!actionUrl.isNullOrBlank()) {
+                                Spacer(Modifier.width(10.dp))
+                                val btnText = when {
+                                    isVendorTable -> "Buy"
+                                    actionLabel.isNotBlank() && actionLabel != primaryTitle ->
+                                        actionLabel.removePrefix("[").removeSuffix("]")
+                                    else -> "Open"
+                                }
+                                Button(
+                                    enabled = enabled,
+                                    onClick = { onActionClick(actionUrl) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = DccColors.Crimson),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(btnText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
 
-                        if (!actionUrl.isNullOrBlank()) {
-                            Spacer(Modifier.width(10.dp))
-                            val btnText = when {
-                                isVendorTable -> "Buy"
-                                !row.actionLabel.isNullOrBlank() && row.actionLabel != primaryTitle -> row.actionLabel
-                                else -> "Open"
-                            }
-                            Button(
-                                enabled = enabled,
-                                onClick = { onActionClick(actionUrl) },
-                                colors = ButtonDefaults.buttonColors(containerColor = DccColors.Crimson),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text(btnText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        if (descriptions.isNotEmpty()) {
+                            for (desc in descriptions) {
+                                Text(
+                                    text = desc,
+                                    color = DccColors.TextSecondary,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 18.sp,
+                                )
                             }
                         }
                     }
@@ -153,7 +211,7 @@ private fun TableStatChip(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(DccColors.SurfaceVariant)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         if (label.isNotBlank()) {
             Text(

@@ -74,6 +74,9 @@ private data class ParsedBattleState(
     val enemyWeapon: String?,
     val enemyHp: Int,
     val enemyMaxHpFromPage: Int?,
+    val damageDealt: Int? = null,
+    val isCritDealt: Boolean = false,
+    val damageTaken: Int? = null,
 )
 
 private val ENCOUNTER_REGEX = Regex(
@@ -93,6 +96,14 @@ private val DEFEAT_REGEX = Regex(
     RegexOption.IGNORE_CASE,
 )
 private val SLASH_HP_REGEX = Regex("""(-?\d+)\s*/\s*(\d+)\s*HP""", RegexOption.IGNORE_CASE)
+private val DMG_DEALT_REGEX = Regex(
+    """(?:You hit .+? for|RIPOSTE for|You strike .+? for)\s+(\d+)\s+points? of damage""",
+    RegexOption.IGNORE_CASE,
+)
+private val DMG_TAKEN_REGEX = Regex(
+    """(?:hits you for|strikes you for|bites you for|blasts you for)\s+(\d+)\s+points? of damage""",
+    RegexOption.IGNORE_CASE,
+)
 
 /**
  * Filters out redundant plain-text paragraphs emitted by the server-side web `battlehud.php`
@@ -191,6 +202,9 @@ fun BattleHudCard(
             enemyWeapon = enemyWeapon,
             enemyHp = parsed.enemyHp.coerceAtLeast(0),
             enemyMaxHp = enemyMaxHp,
+            damageDealt = parsed.damageDealt,
+            isCritDealt = parsed.isCritDealt,
+            damageTaken = parsed.damageTaken,
             archetype = archetype,
             modifier = modifier,
         )
@@ -208,6 +222,9 @@ private fun ActiveCombatHud(
     enemyWeapon: String?,
     enemyHp: Int,
     enemyMaxHp: Int,
+    damageDealt: Int?,
+    isCritDealt: Boolean,
+    damageTaken: Int?,
     archetype: HostileArchetype,
     modifier: Modifier = Modifier,
 ) {
@@ -295,6 +312,8 @@ private fun ActiveCombatHud(
                     hp = crawlerHp,
                     maxHp = crawlerMaxHp,
                     fraction = crawlerFrac,
+                    hitBadge = damageTaken?.let { "-$it" },
+                    hitBadgeColor = DccColors.Crimson,
                     icon = {
                         CrawlerShieldIcon(size = 38.dp)
                     },
@@ -328,6 +347,8 @@ private fun ActiveCombatHud(
                     hp = enemyHp,
                     maxHp = enemyMaxHp,
                     fraction = enemyFrac,
+                    hitBadge = damageDealt?.let { if (isCritDealt) "CRIT -$it!" else "-$it" },
+                    hitBadgeColor = if (isCritDealt) DccColors.Gold else DccColors.Cyan,
                     icon = {
                         HostileArchetypeIcon(archetype = archetype, size = 38.dp)
                     },
@@ -379,6 +400,8 @@ private fun CombatantColumn(
     hp: Int,
     maxHp: Int,
     fraction: Float,
+    hitBadge: String? = null,
+    hitBadgeColor: Color = DccColors.Crimson,
     icon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -438,12 +461,28 @@ private fun CombatantColumn(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = "HP",
-                color = DccColors.TextSecondary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            if (!hitBadge.isNullOrBlank()) {
+                Surface(
+                    color = hitBadgeColor.copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, hitBadgeColor.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(5.dp),
+                ) {
+                    Text(
+                        text = hitBadge,
+                        color = hitBadgeColor,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = "HP",
+                    color = DccColors.TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             Text(
                 text = "$hp / $maxHp",
                 color = barColor,
@@ -695,6 +734,15 @@ private fun parseBattleState(page: DccPageResponse): ParsedBattleState? {
         val currentHp = lastHpMatch.groupValues[3].toIntOrNull() ?: 0
         val initialHp = firstHpMatch?.groupValues?.getOrNull(3)?.toIntOrNull()
         val maxCandidate = maxOf(enemySlashMax ?: 0, initialHp ?: 0, currentHp).takeIf { it > 0 }
+        val dealtTotal = DMG_DEALT_REGEX.findAll(fullText)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .sum()
+            .takeIf { it > 0 }
+        val takenTotal = DMG_TAKEN_REGEX.findAll(fullText)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .sum()
+            .takeIf { it > 0 }
+        val critDealt = fullText.contains("CRITICAL", ignoreCase = true)
         return ParsedBattleState(
             outcome = BattleOutcome.ACTIVE,
             enemyName = enemyName,
@@ -702,6 +750,9 @@ private fun parseBattleState(page: DccPageResponse): ParsedBattleState? {
             enemyWeapon = encounterWeapon,
             enemyHp = currentHp,
             enemyMaxHpFromPage = maxCandidate,
+            damageDealt = dealtTotal,
+            isCritDealt = critDealt,
+            damageTaken = takenTotal,
         )
     }
 

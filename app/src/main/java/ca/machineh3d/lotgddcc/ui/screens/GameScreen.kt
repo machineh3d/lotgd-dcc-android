@@ -1,8 +1,12 @@
 package ca.machineh3d.lotgddcc.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
@@ -43,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,9 +64,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import ca.machineh3d.lotgddcc.BuildConfig
+import ca.machineh3d.lotgddcc.audio.SoundFxManager
+import ca.machineh3d.lotgddcc.data.AppUpdateInfo
 import ca.machineh3d.lotgddcc.model.CharStatSection
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
+import ca.machineh3d.lotgddcc.ui.SessionTelemetry
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
 import ca.machineh3d.lotgddcc.ui.components.BattleHudCard
 import ca.machineh3d.lotgddcc.ui.components.CasinoVisualPanel
@@ -92,10 +100,16 @@ fun GameScreen(
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
     mailNotificationsEnabled: Boolean,
+    pvpNotificationsEnabled: Boolean,
+    notificationSoundsEnabled: Boolean,
     combatFlairEnabled: Boolean,
+    soundEffectsEnabled: Boolean,
     useLightTheme: Boolean,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
+    availableUpdate: AppUpdateInfo?,
+    isCheckingUpdate: Boolean,
+    sessionTelemetry: SessionTelemetry,
     onNavigate: (String) -> Unit,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
@@ -107,12 +121,17 @@ fun GameScreen(
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
     onToggleMailNotifications: (Boolean) -> Unit,
+    onTogglePvpNotifications: (Boolean) -> Unit,
+    onToggleNotificationSounds: (Boolean) -> Unit,
     onToggleCombatFlair: (Boolean) -> Unit,
+    onToggleSoundEffects: (Boolean) -> Unit,
     onToggleLightTheme: (Boolean) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     val haptic = LocalHapticFeedback.current
 
@@ -122,8 +141,38 @@ fun GameScreen(
     var flashColor by remember { mutableStateOf(DccColors.Crimson) }
     var previousHp by remember { mutableStateOf<Int?>(null) }
 
+    // Smart Android Back Button: close sheets -> return to Safe Room -> double-tap to exit
+    var lastBackPressMs by remember { mutableLongStateOf(0L) }
     val allNavItems = remember(page.navGroups) {
         page.navGroups.flatMap { it.items }
+    }
+    val isAtSafeRoomHub = page.currentUrl.contains("village.php", ignoreCase = true) ||
+        page.pageType == "village"
+
+    BackHandler(enabled = showStatsSheet || showSettingsSheet || !isAtSafeRoomHub || (System.currentTimeMillis() - lastBackPressMs > 2000L)) {
+        when {
+            showStatsSheet -> onToggleStatsSheet(false)
+            showSettingsSheet -> onToggleSettingsSheet(false)
+            !isAtSafeRoomHub -> {
+                val returnLink = allNavItems.firstOrNull {
+                    it.url.contains("village.php", ignoreCase = true) ||
+                        it.label.contains("return", ignoreCase = true) ||
+                        it.label.contains("back", ignoreCase = true) ||
+                        it.label.contains("exit", ignoreCase = true)
+                }
+                if (returnLink != null) {
+                    onNavigate(returnLink.url)
+                } else if (page.currentUrl.contains("mail.php", ignoreCase = true)) {
+                    onNavigate("village.php")
+                } else {
+                    Toast.makeText(context, "Use the combat or room actions below.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            else -> {
+                lastBackPressMs = System.currentTimeMillis()
+                Toast.makeText(context, "Press back again to exit Dungeon Crawler World", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     LaunchedEffect(page.currentUrl, page.title, page.paragraphs.size, page.tables.size) {
@@ -133,35 +182,51 @@ fun GameScreen(
         val prev = previousHp
         previousHp = currentHp
 
-        if (combatFlairEnabled && page.paragraphs.isNotEmpty()) {
+        if (page.paragraphs.isNotEmpty()) {
             val plain = page.paragraphs.joinToString(" ") { line -> line.joinToString("") { it.text } }
+            val gotAchievementOrLoot = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
+                plain.contains("SECRET ACHIEVEMENT", ignoreCase = true) ||
+                plain.contains("LOOT BOX", ignoreCase = true)
             val tookDamage = (prev != null && currentHp != null && currentHp < prev) ||
                 plain.contains("hits you for", ignoreCase = true) ||
                 plain.contains("strikes you for", ignoreCase = true)
+            val isCrit = plain.contains("CRITICAL", ignoreCase = true)
             val landedHit = plain.contains("You hit ", ignoreCase = true) ||
-                plain.contains("CRITICAL", ignoreCase = true) ||
+                isCrit ||
+                plain.contains("RIPOSTE", ignoreCase = true) ||
                 plain.contains("You have defeated", ignoreCase = true) ||
                 plain.contains("You have slain", ignoreCase = true)
 
-            if (tookDamage) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                flashColor = DccColors.Crimson
-                launch {
-                    flashAlpha.snapTo(0.24f)
-                    flashAlpha.animateTo(0f, animationSpec = tween(260))
-                }
-                launch {
-                    val offsets = listOf(-14f, 14f, -10f, 10f, -5f, 5f, 0f)
-                    for (dx in offsets) {
-                        shakeOffset.animateTo(dx, animationSpec = tween(32))
+            if (gotAchievementOrLoot) {
+                if (combatFlairEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (soundEffectsEnabled) SoundFxManager.playAchievementOrLoot()
+            } else if (tookDamage) {
+                if (soundEffectsEnabled) SoundFxManager.playDamageTaken()
+                if (combatFlairEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    flashColor = DccColors.Crimson
+                    launch {
+                        flashAlpha.snapTo(0.24f)
+                        flashAlpha.animateTo(0f, animationSpec = tween(260))
+                    }
+                    launch {
+                        val offsets = listOf(-14f, 14f, -10f, 10f, -5f, 5f, 0f)
+                        for (dx in offsets) {
+                            shakeOffset.animateTo(dx, animationSpec = tween(32))
+                        }
                     }
                 }
             } else if (landedHit) {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                flashColor = DccColors.Cyan
-                launch {
-                    flashAlpha.snapTo(0.14f)
-                    flashAlpha.animateTo(0f, animationSpec = tween(220))
+                if (soundEffectsEnabled) {
+                    if (isCrit) SoundFxManager.playCrit() else SoundFxManager.playHit()
+                }
+                if (combatFlairEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    flashColor = DccColors.Cyan
+                    launch {
+                        flashAlpha.snapTo(0.14f)
+                        flashAlpha.animateTo(0f, animationSpec = tween(220))
+                    }
                 }
             }
         }
@@ -420,6 +485,7 @@ fun GameScreen(
             CrawlerStatsSheetContent(
                 sections = page.charStats,
                 secondsPerGameDay = page.secondsPerGameDay,
+                sessionTelemetry = sessionTelemetry,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -439,17 +505,26 @@ fun GameScreen(
                 autoHealThresholdPercent = autoHealThresholdPercent,
                 newDayNotificationsEnabled = newDayNotificationsEnabled,
                 mailNotificationsEnabled = mailNotificationsEnabled,
+                pvpNotificationsEnabled = pvpNotificationsEnabled,
+                notificationSoundsEnabled = notificationSoundsEnabled,
                 combatFlairEnabled = combatFlairEnabled,
+                soundEffectsEnabled = soundEffectsEnabled,
                 useLightTheme = useLightTheme,
                 narrativeFontSizeSp = narrativeFontSizeSp,
                 compactCombatLog = compactCombatLog,
+                availableUpdate = availableUpdate,
+                isCheckingUpdate = isCheckingUpdate,
                 onUpdateAutoHeal = onUpdateAutoHeal,
                 onToggleNewDayNotifications = onToggleNewDayNotifications,
                 onToggleMailNotifications = onToggleMailNotifications,
+                onTogglePvpNotifications = onTogglePvpNotifications,
+                onToggleNotificationSounds = onToggleNotificationSounds,
                 onToggleCombatFlair = onToggleCombatFlair,
+                onToggleSoundEffects = onToggleSoundEffects,
                 onToggleLightTheme = onToggleLightTheme,
                 onUpdateNarrativeFontSize = onUpdateNarrativeFontSize,
                 onToggleCompactCombatLog = onToggleCompactCombatLog,
+                onCheckForUpdates = onCheckForUpdates,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -465,17 +540,26 @@ private fun ClientSettingsSheetContent(
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
     mailNotificationsEnabled: Boolean,
+    pvpNotificationsEnabled: Boolean,
+    notificationSoundsEnabled: Boolean,
     combatFlairEnabled: Boolean,
+    soundEffectsEnabled: Boolean,
     useLightTheme: Boolean,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
+    availableUpdate: AppUpdateInfo?,
+    isCheckingUpdate: Boolean,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
     onToggleMailNotifications: (Boolean) -> Unit,
+    onTogglePvpNotifications: (Boolean) -> Unit,
+    onToggleNotificationSounds: (Boolean) -> Unit,
     onToggleCombatFlair: (Boolean) -> Unit,
+    onToggleSoundEffects: (Boolean) -> Unit,
     onToggleLightTheme: (Boolean) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -486,6 +570,7 @@ private fun ClientSettingsSheetContent(
         when (pendingPermTarget) {
             "newday" -> onToggleNewDayNotifications(granted)
             "mail" -> onToggleMailNotifications(granted)
+            "pvp" -> onTogglePvpNotifications(granted)
         }
         pendingPermTarget = null
     }
@@ -522,6 +607,50 @@ private fun ClientSettingsSheetContent(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
+
+        // Update Available banner if GitHub has a newer release
+        if (availableUpdate != null) {
+            Surface(
+                color = DccColors.Cyan.copy(alpha = 0.14f),
+                border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "UPDATE AVAILABLE: ${availableUpdate.latestVersion}",
+                            color = DccColors.Cyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 0.8.sp,
+                        )
+                        Text(
+                            text = "A newer Android APK is live on GitHub Releases.",
+                            color = DccColors.TextPrimary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            runCatching {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.releaseUrl))
+                                context.startActivity(intent)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text("Download", color = DccColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
 
         // Appearance: Light / Dark Theme + Narrative Font Size
         Surface(
@@ -665,7 +794,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Combat & Casino Flair + Compact Combat Log
+        // Combat Flair, Sound Effects & Compact Combat Log
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -710,6 +839,35 @@ private fun ClientSettingsSheetContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
+                            text = "In-App Synthesized Sound Effects",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Subtle retro synth cues for combat hits, crits, loot boxes, and mail.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = soundEffectsEnabled,
+                        onCheckedChange = onToggleSoundEffects,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
                             text = "Compact Combat Log",
                             color = DccColors.TextPrimary,
                             fontSize = 14.sp,
@@ -733,7 +891,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Notifications: New Game Day + In-Game Mail
+        // Notifications: New Game Day, In-Game Mail, PvP Attacks, and Notification Sounds
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -807,10 +965,70 @@ private fun ClientSettingsSheetContent(
                         )
                     )
                 }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "PvP Attack Notifications",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "High-priority alert if another Crawler attacks or slays you while offline.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = pvpNotificationsEnabled,
+                        onCheckedChange = { want ->
+                            requestNotifToggle("pvp", want, onTogglePvpNotifications)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Crimson,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Notification Sounds",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Play system alert tone for New Day, Mail, and PvP notifications (off = silent).",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = notificationSoundsEnabled,
+                        onCheckedChange = onToggleNotificationSounds,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
             }
         }
 
-        // About App
+        // About App + Manual Update Check
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -820,13 +1038,33 @@ private fun ClientSettingsSheetContent(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(14.dp)
             ) {
-                Text(
-                    text = "ABOUT APP",
-                    color = DccColors.Gold,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "ABOUT APP",
+                        color = DccColors.Gold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                    )
+                    OutlinedButton(
+                        onClick = onCheckForUpdates,
+                        enabled = !isCheckingUpdate,
+                        border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = if (isCheckingUpdate) "Checking..." else "Check Updates",
+                            color = DccColors.Cyan,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
                 AboutRow("App", "Dungeon Crawler World (lotgd-dcc)")
                 AboutRow("Version", "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
                 AboutRow("Server", serverUrl.ifBlank { "Not connected" })
@@ -871,6 +1109,7 @@ private fun formatDuration(totalSeconds: Int): String {
 private fun CrawlerStatsSheetContent(
     sections: List<CharStatSection>,
     secondsPerGameDay: Int,
+    sessionTelemetry: SessionTelemetry,
     modifier: Modifier = Modifier,
 ) {
     // Live 1-second ticker so Earth Time, Dungeon Clock, and Next Cycle tick in real time
@@ -902,6 +1141,56 @@ private fun CrawlerStatsSheetContent(
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
+
+        // Session Loot & XP Recap Card
+        Surface(
+            color = DccColors.SurfaceVariant,
+            border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Text(
+                    text = "SESSION RECAP",
+                    color = DccColors.Cyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SessionStatCell(
+                        label = "KILLS",
+                        value = "${sessionTelemetry.enemiesDefeated}",
+                        accent = DccColors.Crimson,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SessionStatCell(
+                        label = "XP",
+                        value = "+${sessionTelemetry.xpGained}",
+                        accent = DccColors.Violet,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SessionStatCell(
+                        label = "GOLD",
+                        value = formatSigned(sessionTelemetry.goldNet),
+                        accent = DccColors.Gold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SessionStatCell(
+                        label = "TOKENS",
+                        value = formatSigned(sessionTelemetry.tokensNet),
+                        accent = DccColors.Emerald,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
 
         if (sections.isEmpty()) {
             Text(
@@ -997,6 +1286,44 @@ private fun CrawlerStatsSheetContent(
             }
         }
     }
+}
+
+@Composable
+private fun SessionStatCell(
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = DccColors.Surface,
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
+        ) {
+            Text(
+                text = label,
+                color = DccColors.TextSecondary,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+            )
+            Text(
+                text = value,
+                color = accent,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+    }
+}
+
+private fun formatSigned(n: Int): String = when {
+    n > 0 -> "+$n"
+    else -> n.toString()
 }
 
 private val EARTH_TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US)

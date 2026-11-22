@@ -19,25 +19,37 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import ca.machineh3d.lotgddcc.MainActivity
 import ca.machineh3d.lotgddcc.R
+import ca.machineh3d.lotgddcc.data.ServerPreferences
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 object NewDayScheduler {
-    const val CHANNEL_ID = "dcc_new_day_alerts"
+    const val CHANNEL_ID_SOUND = "dcc_new_day_alerts_sound"
+    const val CHANNEL_ID_SILENT = "dcc_new_day_alerts_silent"
     private const val WORK_NAME = "dcc_new_day_notification"
     const val KEY_REPEAT_SECONDS = "repeat_seconds"
     private const val NOTIFICATION_ID = 4201
 
-    fun ensureChannel(context: Context) {
+    fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "New Game Day Alerts",
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val soundChannel = NotificationChannel(
+                CHANNEL_ID_SOUND,
+                "New Game Day Alerts (Sound)",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Notifies you when a new in-game day begins and your Stamina resets."
+                description = "Notifies you with sound when a new in-game day begins and Stamina resets."
             }
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+            val silentChannel = NotificationChannel(
+                CHANNEL_ID_SILENT,
+                "New Game Day Alerts (Silent)",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Silently notifies you when a new in-game day begins and Stamina resets."
+                setSound(null, null)
+            }
+            manager.createNotificationChannel(soundChannel)
+            manager.createNotificationChannel(silentChannel)
         }
     }
 
@@ -47,7 +59,7 @@ object NewDayScheduler {
         secondsPerGameDay: Int,
     ) {
         if (delaySeconds <= 0) return
-        ensureChannel(context)
+        ensureChannels(context)
 
         val safeDelay = delaySeconds.coerceAtLeast(15).toLong()
         val data = Data.Builder()
@@ -70,8 +82,8 @@ object NewDayScheduler {
         WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
     }
 
-    fun postNotification(context: Context) {
-        ensureChannel(context)
+    fun postNotification(context: Context, soundEnabled: Boolean = true) {
+        ensureChannels(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
                 context,
@@ -90,11 +102,13 @@ object NewDayScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val channelId = if (soundEnabled) CHANNEL_ID_SOUND else CHANNEL_ID_SILENT
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_launcher_dcc)
             .setContentTitle("New Game Day — Dungeon Crawler World")
             .setContentText("Your Stamina has reset! Tap to enter the World Dungeon.")
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(if (soundEnabled) NotificationCompat.PRIORITY_DEFAULT else NotificationCompat.PRIORITY_LOW)
+            .setSilent(!soundEnabled)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
@@ -109,7 +123,9 @@ class NewDayNotificationWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        NewDayScheduler.postNotification(applicationContext)
+        val prefs = ServerPreferences(applicationContext)
+        val snap = prefs.prefsFlow.first()
+        NewDayScheduler.postNotification(applicationContext, soundEnabled = snap.notificationSoundsEnabled)
 
         val repeatSeconds = inputData.getInt(NewDayScheduler.KEY_REPEAT_SECONDS, 0)
         if (repeatSeconds >= 600) {

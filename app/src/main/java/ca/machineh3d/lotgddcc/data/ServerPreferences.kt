@@ -21,8 +21,12 @@ data class ClientPrefsSnapshot(
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
     val mailNotificationsEnabled: Boolean = false,
+    val pvpNotificationsEnabled: Boolean = false,
+    val notificationSoundsEnabled: Boolean = true,
     val lastNotifiedUnreadMail: Int = 0,
+    val lastKnownAlive: Boolean = true,
     val combatFlairEnabled: Boolean = true,
+    val soundEffectsEnabled: Boolean = false,
     val useLightTheme: Boolean = false,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
@@ -40,8 +44,12 @@ class ServerPreferences(private val context: Context) {
         private val KEY_AUTO_HEAL_THRESHOLD = intPreferencesKey("auto_heal_threshold")
         private val KEY_NEW_DAY_NOTIFS = booleanPreferencesKey("new_day_notifications_enabled")
         private val KEY_MAIL_NOTIFS = booleanPreferencesKey("mail_notifications_enabled")
+        private val KEY_PVP_NOTIFS = booleanPreferencesKey("pvp_notifications_enabled")
+        private val KEY_NOTIF_SOUNDS = booleanPreferencesKey("notification_sounds_enabled")
         private val KEY_LAST_UNREAD_MAIL = intPreferencesKey("last_notified_unread_mail")
+        private val KEY_LAST_KNOWN_ALIVE = booleanPreferencesKey("last_known_alive")
         private val KEY_COMBAT_FLAIR = booleanPreferencesKey("combat_flair_enabled")
+        private val KEY_SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
         private val KEY_USE_LIGHT_THEME = booleanPreferencesKey("use_light_theme")
         private val KEY_NARRATIVE_FONT_SP = intPreferencesKey("narrative_font_size_sp")
         private val KEY_COMPACT_COMBAT_LOG = booleanPreferencesKey("compact_combat_log")
@@ -69,8 +77,12 @@ class ServerPreferences(private val context: Context) {
             autoHealThresholdPercent = (prefs[KEY_AUTO_HEAL_THRESHOLD] ?: 35).coerceIn(10, 90),
             newDayNotificationsEnabled = prefs[KEY_NEW_DAY_NOTIFS] ?: false,
             mailNotificationsEnabled = prefs[KEY_MAIL_NOTIFS] ?: false,
+            pvpNotificationsEnabled = prefs[KEY_PVP_NOTIFS] ?: false,
+            notificationSoundsEnabled = prefs[KEY_NOTIF_SOUNDS] ?: true,
             lastNotifiedUnreadMail = (prefs[KEY_LAST_UNREAD_MAIL] ?: 0).coerceAtLeast(0),
+            lastKnownAlive = prefs[KEY_LAST_KNOWN_ALIVE] ?: true,
             combatFlairEnabled = prefs[KEY_COMBAT_FLAIR] ?: true,
+            soundEffectsEnabled = prefs[KEY_SOUND_EFFECTS] ?: false,
             useLightTheme = prefs[KEY_USE_LIGHT_THEME] ?: false,
             narrativeFontSizeSp = (prefs[KEY_NARRATIVE_FONT_SP] ?: 15).coerceIn(13, 20),
             compactCombatLog = prefs[KEY_COMPACT_COMBAT_LOG] ?: false,
@@ -152,15 +164,39 @@ class ServerPreferences(private val context: Context) {
         }
     }
 
+    suspend fun savePvpNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_PVP_NOTIFS] = enabled
+        }
+    }
+
+    suspend fun saveNotificationSoundsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NOTIF_SOUNDS] = enabled
+        }
+    }
+
     suspend fun saveLastNotifiedUnreadMail(count: Int) {
         context.dataStore.edit { prefs ->
             prefs[KEY_LAST_UNREAD_MAIL] = count.coerceAtLeast(0)
         }
     }
 
+    suspend fun saveLastKnownAlive(alive: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_LAST_KNOWN_ALIVE] = alive
+        }
+    }
+
     suspend fun saveCombatFlairEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_COMBAT_FLAIR] = enabled
+        }
+    }
+
+    suspend fun saveSoundEffectsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_SOUND_EFFECTS] = enabled
         }
     }
 

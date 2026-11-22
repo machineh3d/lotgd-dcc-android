@@ -3,8 +3,12 @@ package ca.machineh3d.lotgddcc.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import ca.machineh3d.lotgddcc.BuildConfig
+import ca.machineh3d.lotgddcc.audio.SoundFxManager
+import ca.machineh3d.lotgddcc.data.AppUpdateInfo
 import ca.machineh3d.lotgddcc.data.DccApiClient
 import ca.machineh3d.lotgddcc.data.ServerPreferences
+import ca.machineh3d.lotgddcc.data.UpdateChecker
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.notifications.MailNotificationScheduler
@@ -16,6 +20,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class SessionTelemetry(
+    val enemiesDefeated: Int = 0,
+    val goldNet: Int = 0,
+    val xpGained: Int = 0,
+    val tokensNet: Int = 0,
+)
+
 data class GameUiState(
     val serverUrl: String = "",
     val recentServerUrls: List<String> = emptyList(),
@@ -26,10 +37,16 @@ data class GameUiState(
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
     val mailNotificationsEnabled: Boolean = false,
+    val pvpNotificationsEnabled: Boolean = false,
+    val notificationSoundsEnabled: Boolean = true,
     val combatFlairEnabled: Boolean = true,
+    val soundEffectsEnabled: Boolean = false,
     val useLightTheme: Boolean = false,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
+    val availableUpdate: AppUpdateInfo? = null,
+    val isCheckingUpdate: Boolean = false,
+    val sessionTelemetry: SessionTelemetry = SessionTelemetry(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val canRetry: Boolean = false,
@@ -49,14 +66,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
     private var lastKnownUnreadMail: Int = 0
+    private var lastKnownAlive: Boolean = true
     private var lastFailedUrl: String? = null
     private var lastFailedForm: Pair<GameForm, Map<String, String>>? = null
     private var pendingOpenMailOnResume: Boolean = false
+
+    // Session tracking baselines
+    private var prevGold: Int? = null
+    private var prevXp: Int? = null
+    private var prevGems: Int? = null
 
     init {
         viewModelScope.launch {
             val snap = prefs.prefsFlow.first()
             lastKnownUnreadMail = snap.lastNotifiedUnreadMail
+            lastKnownAlive = snap.lastKnownAlive
             _uiState.update {
                 it.copy(
                     serverUrl = snap.lastServerUrl,
@@ -68,17 +92,36 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     autoHealThresholdPercent = snap.autoHealThresholdPercent,
                     newDayNotificationsEnabled = snap.newDayNotificationsEnabled,
                     mailNotificationsEnabled = snap.mailNotificationsEnabled,
+                    pvpNotificationsEnabled = snap.pvpNotificationsEnabled,
+                    notificationSoundsEnabled = snap.notificationSoundsEnabled,
                     combatFlairEnabled = snap.combatFlairEnabled,
+                    soundEffectsEnabled = snap.soundEffectsEnabled,
                     useLightTheme = snap.useLightTheme,
                     narrativeFontSizeSp = snap.narrativeFontSizeSp,
                     compactCombatLog = snap.compactCombatLog,
                 )
             }
-            if (snap.mailNotificationsEnabled) {
+            if (snap.mailNotificationsEnabled || snap.pvpNotificationsEnabled) {
                 MailNotificationScheduler.startPeriodicPolling(appContext)
             }
             if (snap.lastServerUrl.isNotBlank()) {
                 resumeSession(snap.lastServerUrl)
+            }
+            checkForUpdates(silent = true)
+        }
+    }
+
+    fun checkForUpdates(silent: Boolean = false) {
+        viewModelScope.launch {
+            if (!silent) {
+                _uiState.update { it.copy(isCheckingUpdate = true) }
+            }
+            val update = UpdateChecker.checkForUpdate(BuildConfig.VERSION_NAME)
+            _uiState.update {
+                it.copy(
+                    availableUpdate = update,
+                    isCheckingUpdate = false,
+                )
             }
         }
     }
@@ -102,18 +145,70 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun syncMailNotification(resp: DccPageResponse) {
-        if (resp.player?.loggedIn != true) return
+    private fun syncMailAndPvpNotifications(resp: DccPageResponse) {
+        val player = resp.player ?: return
+        if (!player.loggedIn) return
+        val state = _uiState.value
         val unread = resp.mail.unread
-        if (_uiState.value.mailNotificationsEnabled && unread > lastKnownUnreadMail) {
-            MailNotificationScheduler.postMailNotification(appContext, unread)
-        }
-        if (unread != lastKnownUnreadMail) {
-            lastKnownUnreadMail = unread
-            viewModelScope.launch {
-                prefs.saveLastNotifiedUnreadMail(unread)
+
+        if (state.mailNotificationsEnabled && unread > lastKnownUnreadMail) {
+            MailNotificationScheduler.postMailNotification(
+                context = appContext,
+                unreadCount = unread,
+                soundEnabled = state.notificationSoundsEnabled,
+            )
+            if (state.soundEffectsEnabled) {
+                SoundFxManager.playMailPing()
             }
         }
+
+        if (unread != lastKnownUnreadMail) {
+            lastKnownUnreadMail = unread
+            viewModelScope.launch { prefs.saveLastNotifiedUnreadMail(unread) }
+        }
+        if (player.alive != lastKnownAlive) {
+            lastKnownAlive = player.alive
+            viewModelScope.launch { prefs.saveLastKnownAlive(player.alive) }
+        }
+    }
+
+    private fun updateSessionTelemetry(resp: DccPageResponse) {
+        val player = resp.player ?: return
+        if (!player.loggedIn) return
+
+        val plain = resp.paragraphs.joinToString(" ") { line -> line.joinToString("") { it.text } }
+        val wonFight = plain.contains("You have defeated", ignoreCase = true) ||
+            plain.contains("You have slain", ignoreCase = true) ||
+            plain.contains("HOSTILE ELIMINATED", ignoreCase = true)
+
+        val dGold = prevGold?.let { player.gold - it } ?: 0
+        val dXp = prevXp?.let { (player.experience - it).coerceAtLeast(0) } ?: 0
+        val dGems = prevGems?.let { player.gems - it } ?: 0
+
+        prevGold = player.gold
+        prevXp = player.experience
+        prevGems = player.gems
+
+        if (wonFight || dGold != 0 || dXp != 0 || dGems != 0) {
+            _uiState.update { st ->
+                val cur = st.sessionTelemetry
+                st.copy(
+                    sessionTelemetry = cur.copy(
+                        enemiesDefeated = cur.enemiesDefeated + if (wonFight) 1 else 0,
+                        goldNet = cur.goldNet + dGold,
+                        xpGained = cur.xpGained + dXp,
+                        tokensNet = cur.tokensNet + dGems,
+                    )
+                )
+            }
+        }
+    }
+
+    private fun resetSessionTelemetry() {
+        prevGold = null
+        prevXp = null
+        prevGems = null
+        _uiState.update { it.copy(sessionTelemetry = SessionTelemetry()) }
     }
 
     private fun resumeSession(url: String) {
@@ -125,7 +220,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val resp = api.fetchPage(url, startTarget)
                 if (resp.player?.loggedIn == true) {
                     syncNewDayAlarm(resp)
-                    syncMailNotification(resp)
+                    syncMailAndPvpNotifications(resp)
+                    updateSessionTelemetry(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     _uiState.update { it.copy(isLoading = false, page = null) }
@@ -172,8 +268,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val resp = api.login(normalized, username, password)
                 if (resp.player?.loggedIn == true) {
+                    resetSessionTelemetry()
                     syncNewDayAlarm(resp)
-                    syncMailNotification(resp)
+                    syncMailAndPvpNotifications(resp)
+                    updateSessionTelemetry(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     val serverHint = resp.paragraphs
@@ -273,11 +371,31 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(mailNotificationsEnabled = enabled) }
         viewModelScope.launch {
             prefs.saveMailNotificationsEnabled(enabled)
-            if (enabled) {
-                MailNotificationScheduler.startPeriodicPolling(appContext)
-            } else {
-                MailNotificationScheduler.cancel(appContext)
-            }
+            syncBackgroundPoller()
+        }
+    }
+
+    fun updatePvpNotifications(enabled: Boolean) {
+        _uiState.update { it.copy(pvpNotificationsEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.savePvpNotificationsEnabled(enabled)
+            syncBackgroundPoller()
+        }
+    }
+
+    fun updateNotificationSounds(enabled: Boolean) {
+        _uiState.update { it.copy(notificationSoundsEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.saveNotificationSoundsEnabled(enabled)
+        }
+    }
+
+    private fun syncBackgroundPoller() {
+        val st = _uiState.value
+        if (st.mailNotificationsEnabled || st.pvpNotificationsEnabled) {
+            MailNotificationScheduler.startPeriodicPolling(appContext)
+        } else {
+            MailNotificationScheduler.cancel(appContext)
         }
     }
 
@@ -285,6 +403,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(combatFlairEnabled = enabled) }
         viewModelScope.launch {
             prefs.saveCombatFlairEnabled(enabled)
+        }
+    }
+
+    fun updateSoundEffects(enabled: Boolean) {
+        _uiState.update { it.copy(soundEffectsEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.saveSoundEffectsEnabled(enabled)
+            if (enabled) SoundFxManager.playMailPing()
         }
     }
 
@@ -338,7 +464,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val loggedOut = resp.player == null && !_uiState.value.isInCreateFlow && resp.pageType == "login"
                 if (!loggedOut) {
                     syncNewDayAlarm(resp)
-                    syncMailNotification(resp)
+                    syncMailAndPvpNotifications(resp)
+                    updateSessionTelemetry(resp)
                 }
                 _uiState.update {
                     it.copy(
@@ -380,7 +507,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 lastFailedUrl = null
                 lastFailedForm = null
                 syncNewDayAlarm(resp)
-                syncMailNotification(resp)
+                syncMailAndPvpNotifications(resp)
+                updateSessionTelemetry(resp)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -422,6 +550,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun returnToLogin() {
         api.clearSession()
+        resetSessionTelemetry()
         _uiState.update {
             it.copy(
                 page = null,
@@ -441,6 +570,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { api.fetchPage(baseUrl, "login.php?op=logout") }
             }
             api.clearSession()
+            resetSessionTelemetry()
             _uiState.update {
                 it.copy(
                     page = null,
