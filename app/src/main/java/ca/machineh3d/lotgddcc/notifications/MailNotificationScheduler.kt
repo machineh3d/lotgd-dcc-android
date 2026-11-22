@@ -196,7 +196,7 @@ class MailCheckWorker(
 
         return try {
             val api = DccApiClient(applicationContext)
-            val resp = api.fetchPage(snap.lastServerUrl, "village.php")
+            val resp = api.fetchPage(snap.lastServerUrl, "mail.php")
             val player = resp.player
             if (player?.loggedIn == true) {
                 val unread = resp.mail.unread

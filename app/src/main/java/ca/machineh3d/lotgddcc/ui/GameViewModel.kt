@@ -531,8 +531,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recoverBadNav() {
-        val recovery = _uiState.value.page?.recoveryUrl ?: "badnav.php"
-        navigate(recovery)
+        val cur = _uiState.value.page
+        val curUrl = cur?.currentUrl.orEmpty()
+        val firstNav = cur?.navGroups?.firstOrNull()?.items?.firstOrNull()?.url
+        val target = when {
+            !firstNav.isNullOrBlank() && !firstNav.contains("badnav.php", ignoreCase = true) -> firstNav
+            curUrl.contains("badnav.php", ignoreCase = true) -> "village.php"
+            else -> cur?.recoveryUrl?.takeIf { it.isNotBlank() } ?: "badnav.php"
+        }
+        navigate(target)
     }
 
     fun openSyndicateComms() {
