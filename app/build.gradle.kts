@@ -13,8 +13,8 @@ android {
         applicationId = "ca.machineh3d.lotgddcc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.8.0-alpha"
+        versionCode = 12
+        versionName = "0.8.1-alpha"
 
         vectorDrawables {
             useSupportLibrary = true

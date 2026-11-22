@@ -235,9 +235,26 @@ fun GameScreen(
                         onLinkClick = onNavigate,
                     )
 
-                    if (page.tables.isNotEmpty()) {
+                    val displayTables = remember(page.tables, page.forms, page.currentUrl) {
+                        if (page.forms.isEmpty()) {
+                            page.tables
+                        } else {
+                            page.tables.filterNot { table ->
+                                val noHeaders = table.headers.isEmpty()
+                                val noActions = table.rows.none { !it.actionUrl.isNullOrBlank() }
+                                val isCreatePage = page.currentUrl.contains("create.php", ignoreCase = true)
+                                val looksLikeFormLabels = table.rows.any { row ->
+                                    val first = row.cells.firstOrNull()?.trim().orEmpty()
+                                    first.endsWith(":") || first.endsWith("?")
+                                }
+                                noHeaders && noActions && (isCreatePage || looksLikeFormLabels)
+                            }
+                        }
+                    }
+
+                    if (displayTables.isNotEmpty()) {
                         NativeTableCards(
-                            tables = page.tables,
+                            tables = displayTables,
                             enabled = !isLoading,
                             onActionClick = onNavigate,
                         )
