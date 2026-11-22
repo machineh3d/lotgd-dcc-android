@@ -187,21 +187,50 @@ fun GameScreen(
             val gotAchievementOrLoot = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("SECRET ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("LOOT BOX", ignoreCase = true)
+            val wonFight = plain.contains("You have defeated", ignoreCase = true) ||
+                plain.contains("You have slain", ignoreCase = true) ||
+                plain.contains("HOSTILE ELIMINATED", ignoreCase = true)
+            val isExplosion = listOf(
+                "dynamite", "hoblobber", "jug o' boom", "bomb", "explod",
+                "detonat", "grenade", "blast", "shrapnel", "boom",
+            ).any { plain.contains(it, ignoreCase = true) }
+            val isMagicSpell = listOf(
+                "cast ", "casts ", "spell", "arcane", "magic", "lightning",
+                "fireball", "frost", "curse", "ritual", "summon", "aura",
+            ).any { plain.contains(it, ignoreCase = true) }
+            val isShieldBlock = listOf(
+                "riposte", "block", "parry", "deflect", "absorbs",
+            ).any { plain.contains(it, ignoreCase = true) }
+            val isMissWhoosh = listOf(
+                "tries to hit you but", "misses you", "you miss", "dodges", "evades",
+            ).any { plain.contains(it, ignoreCase = true) }
             val tookDamage = (prev != null && currentHp != null && currentHp < prev) ||
                 plain.contains("hits you for", ignoreCase = true) ||
                 plain.contains("strikes you for", ignoreCase = true)
-            val isCrit = plain.contains("CRITICAL", ignoreCase = true)
+            val isCrit = plain.contains("CRITICAL", ignoreCase = true) ||
+                plain.contains("POWER MOVE", ignoreCase = true)
             val landedHit = plain.contains("You hit ", ignoreCase = true) ||
-                isCrit ||
-                plain.contains("RIPOSTE", ignoreCase = true) ||
-                plain.contains("You have defeated", ignoreCase = true) ||
-                plain.contains("You have slain", ignoreCase = true)
+                plain.contains("You strike ", ignoreCase = true) ||
+                isCrit || isShieldBlock || wonFight
+
+            // Ability-matched RPG sound effects
+            if (soundEffectsEnabled) {
+                when {
+                    gotAchievementOrLoot -> SoundFxManager.playAchievementOrLoot()
+                    isExplosion -> SoundFxManager.playExplosionBoom()
+                    isMagicSpell -> SoundFxManager.playMagicSpell()
+                    wonFight -> SoundFxManager.playVictoryFanfare()
+                    isShieldBlock -> SoundFxManager.playShieldBlock()
+                    isCrit -> SoundFxManager.playCritSlash()
+                    tookDamage -> SoundFxManager.playDamageTaken()
+                    landedHit -> SoundFxManager.playSwordSlash()
+                    isMissWhoosh -> SoundFxManager.playMissWhoosh()
+                }
+            }
 
             if (gotAchievementOrLoot) {
                 if (combatFlairEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                if (soundEffectsEnabled) SoundFxManager.playAchievementOrLoot()
             } else if (tookDamage) {
-                if (soundEffectsEnabled) SoundFxManager.playDamageTaken()
                 if (combatFlairEnabled) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     flashColor = DccColors.Crimson
@@ -216,13 +245,10 @@ fun GameScreen(
                         }
                     }
                 }
-            } else if (landedHit) {
-                if (soundEffectsEnabled) {
-                    if (isCrit) SoundFxManager.playCrit() else SoundFxManager.playHit()
-                }
+            } else if (landedHit || isExplosion || isMagicSpell) {
                 if (combatFlairEnabled) {
                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    flashColor = DccColors.Cyan
+                    flashColor = if (isExplosion) DccColors.Gold else DccColors.Cyan
                     launch {
                         flashAlpha.snapTo(0.14f)
                         flashAlpha.animateTo(0f, animationSpec = tween(220))
@@ -845,7 +871,7 @@ private fun ClientSettingsSheetContent(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Subtle retro synth cues for combat hits, crits, loot boxes, and mail.",
+                            text = "Sword slashes, shield clangs, miss whooshes, explosions, spells, and loot chimes.",
                             color = DccColors.TextSecondary,
                             fontSize = 12.sp,
                         )

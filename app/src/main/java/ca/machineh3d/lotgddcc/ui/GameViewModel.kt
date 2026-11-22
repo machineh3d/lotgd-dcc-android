@@ -410,7 +410,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(soundEffectsEnabled = enabled) }
         viewModelScope.launch {
             prefs.saveSoundEffectsEnabled(enabled)
-            if (enabled) SoundFxManager.playMailPing()
+            if (enabled) SoundFxManager.playSwordSlash()
         }
     }
 
