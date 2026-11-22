@@ -24,6 +24,7 @@ data class GameUiState(
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
+    val combatFlairEnabled: Boolean = true,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val page: DccPageResponse? = null,
@@ -54,6 +55,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     autoHealEnabled = snap.autoHealEnabled,
                     autoHealThresholdPercent = snap.autoHealThresholdPercent,
                     newDayNotificationsEnabled = snap.newDayNotificationsEnabled,
+                    combatFlairEnabled = snap.combatFlairEnabled,
                 )
             }
             if (snap.lastServerUrl.isNotBlank()) {
@@ -216,6 +218,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 NewDayScheduler.cancel(appContext)
             }
+        }
+    }
+
+    fun updateCombatFlair(enabled: Boolean) {
+        _uiState.update { it.copy(combatFlairEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.saveCombatFlairEnabled(enabled)
         }
     }
 

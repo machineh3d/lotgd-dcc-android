@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
                         autoHealEnabled = state.autoHealEnabled,
                         autoHealThresholdPercent = state.autoHealThresholdPercent,
                         newDayNotificationsEnabled = state.newDayNotificationsEnabled,
+                        combatFlairEnabled = state.combatFlairEnabled,
                         onNavigate = { url -> vm.navigate(url) },
                         onSubmitForm = { form, values -> vm.submitForm(form, values) },
                         onRecoverBadNav = { vm.recoverBadNav() },
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         onToggleSettingsSheet = { vm.setSettingsSheetVisible(it) },
                         onUpdateAutoHeal = { enabled, pct -> vm.updateAutoHealSettings(enabled, pct) },
                         onToggleNewDayNotifications = { enabled -> vm.updateNewDayNotifications(enabled) },
+                        onToggleCombatFlair = { enabled -> vm.updateCombatFlair(enabled) },
                         onLogout = {
                             if (state.isInCreateFlow) vm.returnToLogin() else vm.logout()
                         },

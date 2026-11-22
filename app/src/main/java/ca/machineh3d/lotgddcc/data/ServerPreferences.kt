@@ -20,6 +20,7 @@ data class ClientPrefsSnapshot(
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
+    val combatFlairEnabled: Boolean = true,
 )
 
 class ServerPreferences(private val context: Context) {
@@ -33,6 +34,7 @@ class ServerPreferences(private val context: Context) {
         private val KEY_AUTO_HEAL_ENABLED = booleanPreferencesKey("auto_heal_enabled")
         private val KEY_AUTO_HEAL_THRESHOLD = intPreferencesKey("auto_heal_threshold")
         private val KEY_NEW_DAY_NOTIFS = booleanPreferencesKey("new_day_notifications_enabled")
+        private val KEY_COMBAT_FLAIR = booleanPreferencesKey("combat_flair_enabled")
         private const val URL_DELIMITER = "\n"
         private const val MAX_RECENT_URLS = 8
     }
@@ -56,6 +58,7 @@ class ServerPreferences(private val context: Context) {
             autoHealEnabled = prefs[KEY_AUTO_HEAL_ENABLED] ?: true,
             autoHealThresholdPercent = (prefs[KEY_AUTO_HEAL_THRESHOLD] ?: 35).coerceIn(10, 90),
             newDayNotificationsEnabled = prefs[KEY_NEW_DAY_NOTIFS] ?: false,
+            combatFlairEnabled = prefs[KEY_COMBAT_FLAIR] ?: true,
         )
     }
 
@@ -125,6 +128,12 @@ class ServerPreferences(private val context: Context) {
     suspend fun saveNewDayNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_NEW_DAY_NOTIFS] = enabled
+        }
+    }
+
+    suspend fun saveCombatFlairEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_COMBAT_FLAIR] = enabled
         }
     }
 

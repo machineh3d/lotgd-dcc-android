@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,9 +36,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,11 +58,17 @@ import ca.machineh3d.lotgddcc.model.CharStatSection
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
+import ca.machineh3d.lotgddcc.ui.components.CasinoVisualPanel
 import ca.machineh3d.lotgddcc.ui.components.NarrativeView
 import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
 import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +83,7 @@ fun GameScreen(
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
+    combatFlairEnabled: Boolean,
     onNavigate: (String) -> Unit,
     onSubmitForm: (GameForm, Map<String, String>) -> Unit,
     onRecoverBadNav: () -> Unit,
@@ -74,104 +92,169 @@ fun GameScreen(
     onToggleSettingsSheet: (Boolean) -> Unit,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
+    onToggleCombatFlair: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
+    val haptic = LocalHapticFeedback.current
+
+    // Combat micro-shake + subtle hit/attack flash state
+    val shakeOffset = remember { Animatable(0f) }
+    val flashAlpha = remember { Animatable(0f) }
+    var flashColor by remember { mutableStateOf(DccColors.Crimson) }
+    var previousHp by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(page.currentUrl, page.title, page.paragraphs.size, page.tables.size) {
         scrollState.scrollTo(0)
-    }
 
-    Scaffold(
-        containerColor = DccColors.Background,
-        topBar = {
-            Column {
-                TopHudBar(
-                    title = page.title,
-                    player = page.player,
-                    mail = page.mail,
-                    onOpenStats = { onToggleStatsSheet(true) },
-                    onOpenComms = onOpenComms,
-                    onOpenSettings = { onToggleSettingsSheet(true) },
-                    onLogout = onLogout,
-                )
-                if (isLoading) {
-                    LinearProgressIndicator(
-                        color = DccColors.Cyan,
-                        trackColor = DccColors.SurfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                    )
+        val currentHp = page.player?.hp
+        val prev = previousHp
+        previousHp = currentHp
+
+        if (combatFlairEnabled && page.paragraphs.isNotEmpty()) {
+            val plain = page.paragraphs.joinToString(" ") { line -> line.joinToString("") { it.text } }
+            val tookDamage = (prev != null && currentHp != null && currentHp < prev) ||
+                plain.contains("hits you for", ignoreCase = true) ||
+                plain.contains("strikes you for", ignoreCase = true)
+            val landedHit = plain.contains("You hit ", ignoreCase = true) ||
+                plain.contains("CRITICAL", ignoreCase = true) ||
+                plain.contains("You have defeated", ignoreCase = true) ||
+                plain.contains("You have slain", ignoreCase = true)
+
+            if (tookDamage) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                flashColor = DccColors.Crimson
+                launch {
+                    flashAlpha.snapTo(0.24f)
+                    flashAlpha.animateTo(0f, animationSpec = tween(260))
+                }
+                launch {
+                    val offsets = listOf(-14f, 14f, -10f, 10f, -5f, 5f, 0f)
+                    for (dx in offsets) {
+                        shakeOffset.animateTo(dx, animationSpec = tween(32))
+                    }
+                }
+            } else if (landedHit) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                flashColor = DccColors.Cyan
+                launch {
+                    flashAlpha.snapTo(0.14f)
+                    flashAlpha.animateTo(0f, animationSpec = tween(220))
                 }
             }
-        },
-        bottomBar = {
-            ActionDeck(
-                pageType = page.pageType,
-                badnav = page.badnav,
-                navGroups = page.navGroups,
-                player = page.player,
-                autoHealEnabled = autoHealEnabled,
-                autoHealThresholdPercent = autoHealThresholdPercent,
-                enabled = !isLoading,
-                onNavigate = onNavigate,
-                onRecoverBadNav = onRecoverBadNav,
-            )
         }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(DccColors.Background)
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-            ) {
-                if (!errorMessage.isNullOrBlank()) {
-                    Surface(
-                        color = DccColors.Crimson.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, DccColors.Crimson.copy(alpha = 0.6f)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = errorMessage,
-                            color = DccColors.TextPrimary,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(12.dp)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = shakeOffset.value }
+    ) {
+        Scaffold(
+            containerColor = DccColors.Background,
+            topBar = {
+                Column {
+                    TopHudBar(
+                        title = page.title,
+                        player = page.player,
+                        mail = page.mail,
+                        onOpenStats = { onToggleStatsSheet(true) },
+                        onOpenComms = onOpenComms,
+                        onOpenSettings = { onToggleSettingsSheet(true) },
+                        onLogout = onLogout,
+                    )
+                    if (isLoading) {
+                        LinearProgressIndicator(
+                            color = DccColors.Cyan,
+                            trackColor = DccColors.SurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
                         )
                     }
                 }
-
-                NarrativeView(
-                    paragraphs = page.paragraphs,
-                    onLinkClick = onNavigate,
+            },
+            bottomBar = {
+                ActionDeck(
+                    pageType = page.pageType,
+                    badnav = page.badnav,
+                    navGroups = page.navGroups,
+                    player = page.player,
+                    autoHealEnabled = autoHealEnabled,
+                    autoHealThresholdPercent = autoHealThresholdPercent,
+                    enabled = !isLoading,
+                    onNavigate = onNavigate,
+                    onRecoverBadNav = onRecoverBadNav,
                 )
-
-                if (page.tables.isNotEmpty()) {
-                    NativeTableCards(
-                        tables = page.tables,
-                        enabled = !isLoading,
-                        onActionClick = onNavigate,
-                    )
-                }
-
-                for (form in page.forms) {
-                    NativeFormCard(
-                        form = form,
-                        enabled = !isLoading,
-                        onSubmit = { values -> onSubmitForm(form, values) },
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
             }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(DccColors.Background)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    if (!errorMessage.isNullOrBlank()) {
+                        Surface(
+                            color = DccColors.Crimson.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, DccColors.Crimson.copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = errorMessage,
+                                color = DccColors.TextPrimary,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    CasinoVisualPanel(
+                        page = page,
+                        animate = combatFlairEnabled,
+                    )
+
+                    NarrativeView(
+                        paragraphs = page.paragraphs,
+                        onLinkClick = onNavigate,
+                    )
+
+                    if (page.tables.isNotEmpty()) {
+                        NativeTableCards(
+                            tables = page.tables,
+                            enabled = !isLoading,
+                            onActionClick = onNavigate,
+                        )
+                    }
+
+                    for (form in page.forms) {
+                        NativeFormCard(
+                            form = form,
+                            enabled = !isLoading,
+                            onSubmit = { values -> onSubmitForm(form, values) },
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+        }
+
+        // Subtle screen flash overlay for combat hits
+        if (flashAlpha.value > 0.005f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(flashColor.copy(alpha = flashAlpha.value))
+            )
         }
     }
 
@@ -183,6 +266,7 @@ fun GameScreen(
         ) {
             CrawlerStatsSheetContent(
                 sections = page.charStats,
+                secondsPerGameDay = page.secondsPerGameDay,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -201,8 +285,10 @@ fun GameScreen(
                 autoHealEnabled = autoHealEnabled,
                 autoHealThresholdPercent = autoHealThresholdPercent,
                 newDayNotificationsEnabled = newDayNotificationsEnabled,
+                combatFlairEnabled = combatFlairEnabled,
                 onUpdateAutoHeal = onUpdateAutoHeal,
                 onToggleNewDayNotifications = onToggleNewDayNotifications,
+                onToggleCombatFlair = onToggleCombatFlair,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -217,8 +303,10 @@ private fun ClientSettingsSheetContent(
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
+    combatFlairEnabled: Boolean,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
+    onToggleCombatFlair: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -313,62 +401,95 @@ private fun ClientSettingsSheetContent(
             }
         }
 
+        // Combat & Casino Flair toggle
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(14.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "New Game Day Notifications",
-                            color = DccColors.TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        val countdownHint = if (nextNewDaySeconds > 0) {
-                            "Alerts when Stamina resets (next day in ${formatDuration(nextNewDaySeconds)})."
-                        } else {
-                            "Alerts when a new in-game day begins (requires Bridge v4+)."
-                        }
-                        Text(
-                            text = countdownHint,
-                            color = DccColors.TextSecondary,
-                            fontSize = 12.sp,
-                        )
-                    }
-                    Switch(
-                        checked = newDayNotificationsEnabled,
-                        onCheckedChange = { wantEnabled ->
-                            if (!wantEnabled) {
-                                onToggleNewDayNotifications(false)
-                            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.POST_NOTIFICATIONS
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (granted) {
-                                    onToggleNewDayNotifications(true)
-                                } else {
-                                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            } else {
-                                onToggleNewDayNotifications(true)
-                            }
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = DccColors.Background,
-                            checkedTrackColor = DccColors.Gold,
-                        )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Combat Shake, Flash & Casino Animations",
+                        color = DccColors.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Adds subtle screen shake, hit flashes, haptics, and spinning slot reels.",
+                        color = DccColors.TextSecondary,
+                        fontSize = 12.sp,
                     )
                 }
+                Switch(
+                    checked = combatFlairEnabled,
+                    onCheckedChange = onToggleCombatFlair,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DccColors.Background,
+                        checkedTrackColor = DccColors.Cyan,
+                    )
+                )
+            }
+        }
+
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "New Game Day Notifications",
+                        color = DccColors.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    val countdownHint = if (nextNewDaySeconds > 0) {
+                        "Alerts when Stamina resets (next day in ${formatDuration(nextNewDaySeconds)})."
+                    } else {
+                        "Alerts when a new in-game day begins (requires Bridge v4+)."
+                    }
+                    Text(
+                        text = countdownHint,
+                        color = DccColors.TextSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
+                Switch(
+                    checked = newDayNotificationsEnabled,
+                    onCheckedChange = { wantEnabled ->
+                        if (!wantEnabled) {
+                            onToggleNewDayNotifications(false)
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                onToggleNewDayNotifications(true)
+                            } else {
+                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        } else {
+                            onToggleNewDayNotifications(true)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = DccColors.Background,
+                        checkedTrackColor = DccColors.Gold,
+                    )
+                )
             }
         }
 
@@ -431,8 +552,25 @@ private fun formatDuration(totalSeconds: Int): String {
 @Composable
 private fun CrawlerStatsSheetContent(
     sections: List<CharStatSection>,
+    secondsPerGameDay: Int,
     modifier: Modifier = Modifier,
 ) {
+    // Live 1-second ticker so Earth Time, Dungeon Clock, and Next Cycle tick in real time
+    var elapsedSec by remember(sections) { mutableIntStateOf(0) }
+    LaunchedEffect(sections) {
+        elapsedSec = 0
+        while (true) {
+            delay(1000L)
+            elapsedSec += 1
+        }
+    }
+
+    val dungeonSpeedMultiplier = if (secondsPerGameDay > 0) {
+        (86400.0 / secondsPerGameDay.toDouble()).roundToInt().coerceAtLeast(1)
+    } else {
+        4
+    }
+
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier
@@ -455,7 +593,6 @@ private fun CrawlerStatsSheetContent(
             )
         } else {
             for (sec in sections) {
-                // Filter out any raw concatenated timezone dropdowns if older bridge is still running
                 val cleanItems = sec.items.filterNot { item ->
                     item.value.contains("PT (Vancouver)MT (Edmonton)") ||
                         (item.label.isBlank() && item.value.isBlank())
@@ -483,7 +620,16 @@ private fun CrawlerStatsSheetContent(
                                     modifier = Modifier.padding(vertical = 6.dp)
                                 )
                             }
-                            val isLongValue = item.value.length > 22
+
+                            val displayValue = formatLiveClockValue(
+                                label = item.label,
+                                rawValue = item.value,
+                                elapsedSec = elapsedSec,
+                                dungeonMultiplier = dungeonSpeedMultiplier,
+                                secondsPerGameDay = secondsPerGameDay,
+                            )
+
+                            val isLongValue = displayValue.length > 22
                             if (isLongValue) {
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -498,7 +644,7 @@ private fun CrawlerStatsSheetContent(
                                         )
                                     }
                                     Text(
-                                        text = item.value,
+                                        text = displayValue,
                                         color = DccColors.TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -519,7 +665,7 @@ private fun CrawlerStatsSheetContent(
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Text(
-                                        text = item.value,
+                                        text = displayValue,
                                         color = DccColors.TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -532,5 +678,48 @@ private fun CrawlerStatsSheetContent(
                 }
             }
         }
+    }
+}
+
+private val EARTH_TIME_FORMATTER = DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US)
+private val HMS_REGEX = Regex("""(\d{1,2}):(\d{2}):(\d{2})""")
+
+private fun formatLiveClockValue(
+    label: String,
+    rawValue: String,
+    elapsedSec: Int,
+    dungeonMultiplier: Int,
+    secondsPerGameDay: Int,
+): String {
+    val lower = label.lowercase()
+    return when {
+        lower.contains("earth time") -> {
+            LocalTime.now().format(EARTH_TIME_FORMATTER)
+        }
+        lower.contains("dungeon clock") -> {
+            val m = HMS_REGEX.find(rawValue) ?: return rawValue
+            val baseSec = (m.groupValues[1].toInt() * 3600) +
+                (m.groupValues[2].toInt() * 60) +
+                m.groupValues[3].toInt()
+            val liveSec = (baseSec + elapsedSec * dungeonMultiplier) % 86400
+            val h = liveSec / 3600
+            val min = (liveSec % 3600) / 60
+            val s = liveSec % 60
+            String.format(Locale.US, "%02d:%02d:%02d", h, min, s)
+        }
+        lower.contains("next cycle") -> {
+            val m = HMS_REGEX.find(rawValue) ?: return rawValue
+            val baseRem = (m.groupValues[1].toInt() * 3600) +
+                (m.groupValues[2].toInt() * 60) +
+                m.groupValues[3].toInt()
+            val cycleLen = if (secondsPerGameDay > 0) secondsPerGameDay else 21600
+            val rem = (baseRem - elapsedSec).let { if (it < 0) (cycleLen + (it % cycleLen)) % cycleLen else it }
+            val h = rem / 3600
+            val min = (rem % 3600) / 60
+            val s = rem % 60
+            val pct = ((cycleLen - rem).toDouble() / cycleLen.toDouble() * 100.0).coerceIn(0.0, 100.0)
+            String.format(Locale.US, "%02d:%02d:%02d (%.1f%%)", h, min, s, pct)
+        }
+        else -> rawValue
     }
 }
