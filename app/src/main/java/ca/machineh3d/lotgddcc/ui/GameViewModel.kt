@@ -5,9 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ca.machineh3d.lotgddcc.BuildConfig
 import ca.machineh3d.lotgddcc.audio.SoundFxManager
+import ca.machineh3d.lotgddcc.data.AppThemeMode
 import ca.machineh3d.lotgddcc.data.AppUpdateInfo
 import ca.machineh3d.lotgddcc.data.DccApiClient
 import ca.machineh3d.lotgddcc.data.ServerPreferences
+import ca.machineh3d.lotgddcc.data.UpdateCheckResult
 import ca.machineh3d.lotgddcc.data.UpdateChecker
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
@@ -40,12 +42,17 @@ data class GameUiState(
     val pvpNotificationsEnabled: Boolean = false,
     val notificationSoundsEnabled: Boolean = true,
     val combatFlairEnabled: Boolean = true,
-    val soundEffectsEnabled: Boolean = false,
-    val useLightTheme: Boolean = false,
+    val combatFlairIntensity: Int = 60,
+    val combatSoundsEnabled: Boolean = true,
+    val menuSoundsEnabled: Boolean = false,
+    val pulseTrainIndicator: Boolean = true,
+    val keepScreenAwake: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.DARK,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
     val availableUpdate: AppUpdateInfo? = null,
     val isCheckingUpdate: Boolean = false,
+    val updateCheckStatus: String? = null,
     val sessionTelemetry: SessionTelemetry = SessionTelemetry(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
@@ -71,7 +78,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var lastFailedForm: Pair<GameForm, Map<String, String>>? = null
     private var pendingOpenMailOnResume: Boolean = false
 
-    // Session tracking baselines
     private var prevGold: Int? = null
     private var prevXp: Int? = null
     private var prevGems: Int? = null
@@ -95,8 +101,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     pvpNotificationsEnabled = snap.pvpNotificationsEnabled,
                     notificationSoundsEnabled = snap.notificationSoundsEnabled,
                     combatFlairEnabled = snap.combatFlairEnabled,
-                    soundEffectsEnabled = snap.soundEffectsEnabled,
-                    useLightTheme = snap.useLightTheme,
+                    combatFlairIntensity = snap.combatFlairIntensity,
+                    combatSoundsEnabled = snap.combatSoundsEnabled,
+                    menuSoundsEnabled = snap.menuSoundsEnabled,
+                    pulseTrainIndicator = snap.pulseTrainIndicator,
+                    keepScreenAwake = snap.keepScreenAwake,
+                    themeMode = snap.themeMode,
                     narrativeFontSizeSp = snap.narrativeFontSizeSp,
                     compactCombatLog = snap.compactCombatLog,
                 )
@@ -114,14 +124,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun checkForUpdates(silent: Boolean = false) {
         viewModelScope.launch {
             if (!silent) {
-                _uiState.update { it.copy(isCheckingUpdate = true) }
+                _uiState.update { it.copy(isCheckingUpdate = true, updateCheckStatus = "Checking GitHub Releases...") }
             }
-            val update = UpdateChecker.checkForUpdate(BuildConfig.VERSION_NAME)
-            _uiState.update {
-                it.copy(
-                    availableUpdate = update,
-                    isCheckingUpdate = false,
-                )
+            when (val result = UpdateChecker.checkForUpdate(BuildConfig.VERSION_NAME)) {
+                is UpdateCheckResult.UpdateAvailable -> {
+                    _uiState.update {
+                        it.copy(
+                            availableUpdate = result.info,
+                            isCheckingUpdate = false,
+                            updateCheckStatus = "Update available: ${result.info.latestVersion}",
+                        )
+                    }
+                }
+                is UpdateCheckResult.UpToDate -> {
+                    _uiState.update {
+                        it.copy(
+                            availableUpdate = null,
+                            isCheckingUpdate = false,
+                            updateCheckStatus = if (silent) null else "Up to date (latest on GitHub: ${result.latestVersion})",
+                        )
+                    }
+                }
+                is UpdateCheckResult.Failed -> {
+                    _uiState.update {
+                        it.copy(
+                            isCheckingUpdate = false,
+                            updateCheckStatus = if (silent) null else "Update check failed: ${result.reason}",
+                        )
+                    }
+                }
             }
         }
     }
@@ -157,7 +188,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 unreadCount = unread,
                 soundEnabled = state.notificationSoundsEnabled,
             )
-            if (state.soundEffectsEnabled) {
+            if (state.menuSoundsEnabled) {
                 SoundFxManager.playMailPing()
             }
         }
@@ -343,9 +374,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(autoHealEnabled = enabled, autoHealThresholdPercent = clamped)
         }
-        viewModelScope.launch {
-            prefs.saveAutoHealSettings(enabled, clamped)
-        }
+        viewModelScope.launch { prefs.saveAutoHealSettings(enabled, clamped) }
     }
 
     fun updateNewDayNotifications(enabled: Boolean) {
@@ -385,9 +414,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateNotificationSounds(enabled: Boolean) {
         _uiState.update { it.copy(notificationSoundsEnabled = enabled) }
-        viewModelScope.launch {
-            prefs.saveNotificationSoundsEnabled(enabled)
-        }
+        viewModelScope.launch { prefs.saveNotificationSoundsEnabled(enabled) }
     }
 
     private fun syncBackgroundPoller() {
@@ -399,41 +426,52 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateCombatFlair(enabled: Boolean) {
-        _uiState.update { it.copy(combatFlairEnabled = enabled) }
-        viewModelScope.launch {
-            prefs.saveCombatFlairEnabled(enabled)
-        }
+    fun updateCombatFlair(enabled: Boolean, intensity: Int) {
+        val clamped = intensity.coerceIn(20, 100)
+        _uiState.update { it.copy(combatFlairEnabled = enabled, combatFlairIntensity = clamped) }
+        viewModelScope.launch { prefs.saveCombatFlairSettings(enabled, clamped) }
     }
 
-    fun updateSoundEffects(enabled: Boolean) {
-        _uiState.update { it.copy(soundEffectsEnabled = enabled) }
+    fun updateCombatSounds(enabled: Boolean) {
+        _uiState.update { it.copy(combatSoundsEnabled = enabled) }
         viewModelScope.launch {
-            prefs.saveSoundEffectsEnabled(enabled)
+            prefs.saveCombatSoundsEnabled(enabled)
             if (enabled) SoundFxManager.playSwordSlash()
         }
     }
 
-    fun updateUseLightTheme(useLight: Boolean) {
-        _uiState.update { it.copy(useLightTheme = useLight) }
+    fun updateMenuSounds(enabled: Boolean) {
+        _uiState.update { it.copy(menuSoundsEnabled = enabled) }
         viewModelScope.launch {
-            prefs.saveUseLightTheme(useLight)
+            prefs.saveMenuSoundsEnabled(enabled)
+            if (enabled) SoundFxManager.playUiClick()
         }
+    }
+
+    fun updatePulseTrainIndicator(enabled: Boolean) {
+        _uiState.update { it.copy(pulseTrainIndicator = enabled) }
+        viewModelScope.launch { prefs.savePulseTrainIndicator(enabled) }
+    }
+
+    fun updateKeepScreenAwake(enabled: Boolean) {
+        _uiState.update { it.copy(keepScreenAwake = enabled) }
+        viewModelScope.launch { prefs.saveKeepScreenAwake(enabled) }
+    }
+
+    fun updateThemeMode(mode: AppThemeMode) {
+        _uiState.update { it.copy(themeMode = mode) }
+        viewModelScope.launch { prefs.saveThemeMode(mode) }
     }
 
     fun updateNarrativeFontSize(sizeSp: Int) {
         val clamped = sizeSp.coerceIn(13, 20)
         _uiState.update { it.copy(narrativeFontSizeSp = clamped) }
-        viewModelScope.launch {
-            prefs.saveNarrativeFontSizeSp(clamped)
-        }
+        viewModelScope.launch { prefs.saveNarrativeFontSizeSp(clamped) }
     }
 
     fun updateCompactCombatLog(compact: Boolean) {
         _uiState.update { it.copy(compactCombatLog = compact) }
-        viewModelScope.launch {
-            prefs.saveCompactCombatLog(compact)
-        }
+        viewModelScope.launch { prefs.saveCompactCombatLog(compact) }
     }
 
     fun refreshCurrentPage() {
@@ -452,8 +490,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun navigate(url: String) {
-        val baseUrl = _uiState.value.serverUrl
+        val state = _uiState.value
+        val baseUrl = state.serverUrl
         if (baseUrl.isBlank() || url.isBlank()) return
+
+        val isCombatAction = url.contains("op=fight", ignoreCase = true) ||
+            url.contains("op=run", ignoreCase = true)
+        if (state.menuSoundsEnabled && !isCombatAction) {
+            SoundFxManager.playUiClick()
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null, canRetry = false) }
@@ -493,6 +538,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val baseUrl = state.serverUrl
         val currentUrl = state.page?.currentUrl ?: "village.php"
         if (baseUrl.isBlank()) return
+
+        if (state.menuSoundsEnabled) {
+            SoundFxManager.playUiClick()
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null, canRetry = false) }
@@ -548,10 +597,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setStatsSheetVisible(visible: Boolean) {
+        if (visible && _uiState.value.menuSoundsEnabled) SoundFxManager.playUiClick()
         _uiState.update { it.copy(showStatsSheet = visible) }
     }
 
     fun setSettingsSheetVisible(visible: Boolean) {
+        if (visible && _uiState.value.menuSoundsEnabled) SoundFxManager.playUiClick()
         _uiState.update { it.copy(showSettingsSheet = visible) }
     }
 

@@ -2,12 +2,14 @@ package ca.machineh3d.lotgddcc
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -33,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import ca.machineh3d.lotgddcc.data.AppThemeMode
 import ca.machineh3d.lotgddcc.notifications.MailNotificationScheduler
 import ca.machineh3d.lotgddcc.ui.GameViewModel
 import ca.machineh3d.lotgddcc.ui.components.CrawlerShieldIcon
@@ -68,7 +72,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LotgdDccTheme(useLightTheme = state.useLightTheme) {
+            // Keep screen awake while enabled in Settings
+            DisposableEffect(state.keepScreenAwake) {
+                if (state.keepScreenAwake) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                onDispose {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+
+            val systemDark = isSystemInDarkTheme()
+            val useLight = when (state.themeMode) {
+                AppThemeMode.LIGHT -> true
+                AppThemeMode.DARK -> false
+                AppThemeMode.SYSTEM -> !systemDark
+            }
+
+            LotgdDccTheme(useLightTheme = useLight) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     val activePage = state.page
                     if (activePage == null) {
@@ -100,12 +123,17 @@ class MainActivity : ComponentActivity() {
                             pvpNotificationsEnabled = state.pvpNotificationsEnabled,
                             notificationSoundsEnabled = state.notificationSoundsEnabled,
                             combatFlairEnabled = state.combatFlairEnabled,
-                            soundEffectsEnabled = state.soundEffectsEnabled,
-                            useLightTheme = state.useLightTheme,
+                            combatFlairIntensity = state.combatFlairIntensity,
+                            combatSoundsEnabled = state.combatSoundsEnabled,
+                            menuSoundsEnabled = state.menuSoundsEnabled,
+                            pulseTrainIndicator = state.pulseTrainIndicator,
+                            keepScreenAwake = state.keepScreenAwake,
+                            themeMode = state.themeMode,
                             narrativeFontSizeSp = state.narrativeFontSizeSp,
                             compactCombatLog = state.compactCombatLog,
                             availableUpdate = state.availableUpdate,
                             isCheckingUpdate = state.isCheckingUpdate,
+                            updateCheckStatus = state.updateCheckStatus,
                             sessionTelemetry = state.sessionTelemetry,
                             onNavigate = { url -> vm.navigate(url) },
                             onRefresh = { vm.refreshCurrentPage() },
@@ -120,9 +148,12 @@ class MainActivity : ComponentActivity() {
                             onToggleMailNotifications = { enabled -> vm.updateMailNotifications(enabled) },
                             onTogglePvpNotifications = { enabled -> vm.updatePvpNotifications(enabled) },
                             onToggleNotificationSounds = { enabled -> vm.updateNotificationSounds(enabled) },
-                            onToggleCombatFlair = { enabled -> vm.updateCombatFlair(enabled) },
-                            onToggleSoundEffects = { enabled -> vm.updateSoundEffects(enabled) },
-                            onToggleLightTheme = { enabled -> vm.updateUseLightTheme(enabled) },
+                            onUpdateCombatFlair = { enabled, intensity -> vm.updateCombatFlair(enabled, intensity) },
+                            onToggleCombatSounds = { enabled -> vm.updateCombatSounds(enabled) },
+                            onToggleMenuSounds = { enabled -> vm.updateMenuSounds(enabled) },
+                            onTogglePulseTrain = { enabled -> vm.updatePulseTrainIndicator(enabled) },
+                            onToggleKeepScreenAwake = { enabled -> vm.updateKeepScreenAwake(enabled) },
+                            onUpdateThemeMode = { mode -> vm.updateThemeMode(mode) },
                             onUpdateNarrativeFontSize = { sp -> vm.updateNarrativeFontSize(sp) },
                             onToggleCompactCombatLog = { enabled -> vm.updateCompactCombatLog(enabled) },
                             onCheckForUpdates = { vm.checkForUpdates(silent = false) },

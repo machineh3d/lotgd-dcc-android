@@ -169,6 +169,16 @@ object SoundFxManager {
         )
     }
 
+        /** Subtle crisp mechanical UI click for menu & room navigation. */
+    fun playUiClick() {
+        playPcm(durationMs = 38) { i, _, rng ->
+            val t = i.toDouble() / SAMPLE_RATE
+            val click = sin(2.0 * PI * 920.0 * t) * exp(-t * 110.0) * 0.45
+            val air = (rng.nextDouble() * 2.0 - 1.0) * exp(-t * 160.0) * 0.18
+            (click + air).coerceIn(-1.0, 1.0)
+        }
+    }
+
     /** Crisp Syndicate Comms incoming mail chirp. */
     fun playMailPing() {
         playNotes(

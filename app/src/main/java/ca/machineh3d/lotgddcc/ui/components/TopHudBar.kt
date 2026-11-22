@@ -1,5 +1,11 @@
 package ca.machineh3d.lotgddcc.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,10 +36,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +55,7 @@ fun TopHudBar(
     title: String,
     player: PlayerState?,
     mail: MailState,
+    pulseTrainIndicator: Boolean,
     onOpenStats: () -> Unit,
     onOpenComms: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -202,6 +211,22 @@ fun TopHudBar(
                     else -> "${formatCompact(player.experience)}/${formatCompact(expTarget)}"
                 }
 
+                val trainPulseAlpha = if (expReady && pulseTrainIndicator) {
+                    val transition = rememberInfiniteTransition(label = "trainPulse")
+                    val animated by transition.animateFloat(
+                        initialValue = 0.42f,
+                        targetValue = 1.0f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 820, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                        label = "trainAlpha",
+                    )
+                    animated
+                } else {
+                    1f
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -249,8 +274,15 @@ fun TopHudBar(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                if (expReady && pulseTrainIndicator) {
+                                    DccColors.Gold.copy(alpha = 0.14f * trainPulseAlpha)
+                                } else {
+                                    Color.Transparent
+                                }
+                            )
                             .clickable(onClick = onTapXpBar)
-                            .padding(vertical = 2.dp)
+                            .padding(horizontal = if (expReady && pulseTrainIndicator) 3.dp else 0.dp, vertical = 2.dp)
                     ) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -262,6 +294,7 @@ fun TopHudBar(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
+                                modifier = Modifier.graphicsLayer { alpha = trainPulseAlpha },
                             )
                             Text(
                                 text = expRightLabel,
@@ -269,6 +302,9 @@ fun TopHudBar(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = if (expReady && pulseTrainIndicator) trainPulseAlpha else 1f
+                                },
                             )
                         }
                         Spacer(Modifier.height(2.dp))
@@ -280,6 +316,7 @@ fun TopHudBar(
                                 .fillMaxWidth()
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
+                                .graphicsLayer { alpha = trainPulseAlpha }
                         )
                     }
 

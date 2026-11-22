@@ -13,6 +13,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -65,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import ca.machineh3d.lotgddcc.BuildConfig
 import ca.machineh3d.lotgddcc.audio.SoundFxManager
+import ca.machineh3d.lotgddcc.data.AppThemeMode
 import ca.machineh3d.lotgddcc.data.AppUpdateInfo
 import ca.machineh3d.lotgddcc.model.CharStatSection
 import ca.machineh3d.lotgddcc.model.DccPageResponse
@@ -103,12 +107,17 @@ fun GameScreen(
     pvpNotificationsEnabled: Boolean,
     notificationSoundsEnabled: Boolean,
     combatFlairEnabled: Boolean,
-    soundEffectsEnabled: Boolean,
-    useLightTheme: Boolean,
+    combatFlairIntensity: Int,
+    combatSoundsEnabled: Boolean,
+    menuSoundsEnabled: Boolean,
+    pulseTrainIndicator: Boolean,
+    keepScreenAwake: Boolean,
+    themeMode: AppThemeMode,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
+    updateCheckStatus: String?,
     sessionTelemetry: SessionTelemetry,
     onNavigate: (String) -> Unit,
     onRefresh: () -> Unit,
@@ -123,9 +132,12 @@ fun GameScreen(
     onToggleMailNotifications: (Boolean) -> Unit,
     onTogglePvpNotifications: (Boolean) -> Unit,
     onToggleNotificationSounds: (Boolean) -> Unit,
-    onToggleCombatFlair: (Boolean) -> Unit,
-    onToggleSoundEffects: (Boolean) -> Unit,
-    onToggleLightTheme: (Boolean) -> Unit,
+    onUpdateCombatFlair: (Boolean, Int) -> Unit,
+    onToggleCombatSounds: (Boolean) -> Unit,
+    onToggleMenuSounds: (Boolean) -> Unit,
+    onTogglePulseTrain: (Boolean) -> Unit,
+    onToggleKeepScreenAwake: (Boolean) -> Unit,
+    onUpdateThemeMode: (AppThemeMode) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -135,13 +147,13 @@ fun GameScreen(
     val scrollState = rememberScrollState()
     val haptic = LocalHapticFeedback.current
 
-    // Combat micro-shake + subtle hit/attack flash state
-    val shakeOffset = remember { Animatable(0f) }
+    // Scalable combat shake (X + Y) and hit/attack flash state
+    val shakeOffsetX = remember { Animatable(0f) }
+    val shakeOffsetY = remember { Animatable(0f) }
     val flashAlpha = remember { Animatable(0f) }
     var flashColor by remember { mutableStateOf(DccColors.Crimson) }
     var previousHp by remember { mutableStateOf<Int?>(null) }
 
-    // Smart Android Back Button: close sheets -> return to Safe Room -> double-tap to exit
     var lastBackPressMs by remember { mutableLongStateOf(0L) }
     val allNavItems = remember(page.navGroups) {
         page.navGroups.flatMap { it.items }
@@ -184,6 +196,14 @@ fun GameScreen(
 
         if (page.paragraphs.isNotEmpty()) {
             val plain = page.paragraphs.joinToString(" ") { line -> line.joinToString("") { it.text } }
+            val isCorridorOrFight = page.pageType == "combat" ||
+                page.currentUrl.contains("forest.php", ignoreCase = true) ||
+                page.currentUrl.contains("battle", ignoreCase = true) ||
+                page.currentUrl.contains("pvp.php", ignoreCase = true) ||
+                page.currentUrl.contains("dragon.php", ignoreCase = true) ||
+                page.currentUrl.contains("graveyard.php", ignoreCase = true) ||
+                plain.contains("'s Hitpoints", ignoreCase = true)
+
             val gotAchievementOrLoot = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("SECRET ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("LOOT BOX", ignoreCase = true)
@@ -213,8 +233,8 @@ fun GameScreen(
                 plain.contains("You strike ", ignoreCase = true) ||
                 isCrit || isShieldBlock || wonFight
 
-            // Ability-matched RPG sound effects
-            if (soundEffectsEnabled) {
+            // Ability-matched RPG sound effects (Corridors & Fights toggle)
+            if (combatSoundsEnabled && (isCorridorOrFight || gotAchievementOrLoot || wonFight || tookDamage)) {
                 when {
                     gotAchievementOrLoot -> SoundFxManager.playAchievementOrLoot()
                     isExplosion -> SoundFxManager.playExplosionBoom()
@@ -228,30 +248,64 @@ fun GameScreen(
                 }
             }
 
+            // Intensity-scaled visual shake & flash (20% subtle -> 100% intense)
+            val scale = (combatFlairIntensity.coerceIn(20, 100) / 50f) // 0.4x .. 2.0x
+            val flashDuration = (200 + (combatFlairIntensity * 1.4f)).toInt()
+
             if (gotAchievementOrLoot) {
-                if (combatFlairEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (combatFlairEnabled) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    flashColor = DccColors.Gold
+                    launch {
+                        flashAlpha.snapTo((0.18f * scale).coerceAtMost(0.36f))
+                        flashAlpha.animateTo(0f, animationSpec = tween(flashDuration))
+                    }
+                }
             } else if (tookDamage) {
                 if (combatFlairEnabled) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     flashColor = DccColors.Crimson
                     launch {
-                        flashAlpha.snapTo(0.24f)
-                        flashAlpha.animateTo(0f, animationSpec = tween(260))
+                        flashAlpha.snapTo((0.22f * scale).coerceAtMost(0.46f))
+                        flashAlpha.animateTo(0f, animationSpec = tween(flashDuration))
                     }
                     launch {
-                        val offsets = listOf(-14f, 14f, -10f, 10f, -5f, 5f, 0f)
-                        for (dx in offsets) {
-                            shakeOffset.animateTo(dx, animationSpec = tween(32))
+                        val baseOffsets = listOf(-14f, 14f, -11f, 11f, -7f, 7f, -3f, 0f)
+                        for (dx in baseOffsets) {
+                            shakeOffsetX.animateTo(dx * scale, animationSpec = tween(30))
+                        }
+                    }
+                    if (combatFlairIntensity >= 65) {
+                        launch {
+                            val yScale = (combatFlairIntensity - 50) / 50f
+                            for (dy in listOf(7f, -7f, 4f, -4f, 0f)) {
+                                shakeOffsetY.animateTo(dy * yScale, animationSpec = tween(36))
+                            }
                         }
                     }
                 }
             } else if (landedHit || isExplosion || isMagicSpell) {
                 if (combatFlairEnabled) {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    flashColor = if (isExplosion) DccColors.Gold else DccColors.Cyan
+                    haptic.performHapticFeedback(
+                        if (isExplosion || isCrit) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove
+                    )
+                    flashColor = when {
+                        isExplosion -> DccColors.Gold
+                        isMagicSpell -> DccColors.Violet
+                        else -> DccColors.Cyan
+                    }
                     launch {
-                        flashAlpha.snapTo(0.14f)
-                        flashAlpha.animateTo(0f, animationSpec = tween(220))
+                        val peak = if (isExplosion || isCrit) 0.24f else 0.14f
+                        flashAlpha.snapTo((peak * scale).coerceAtMost(0.42f))
+                        flashAlpha.animateTo(0f, animationSpec = tween(flashDuration))
+                    }
+                    if (isExplosion || isCrit || combatFlairIntensity >= 75) {
+                        launch {
+                            val amp = if (isExplosion || isCrit) 12f * scale else 6f * scale
+                            for (dx in listOf(-amp, amp, -amp * 0.55f, amp * 0.55f, 0f)) {
+                                shakeOffsetX.animateTo(dx, animationSpec = tween(30))
+                            }
+                        }
                     }
                 }
             }
@@ -261,7 +315,10 @@ fun GameScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer { translationX = shakeOffset.value }
+            .graphicsLayer {
+                translationX = shakeOffsetX.value
+                translationY = shakeOffsetY.value
+            }
     ) {
         Scaffold(
             containerColor = DccColors.Background,
@@ -271,6 +328,7 @@ fun GameScreen(
                         title = page.title,
                         player = page.player,
                         mail = page.mail,
+                        pulseTrainIndicator = pulseTrainIndicator,
                         onOpenStats = { onToggleStatsSheet(true) },
                         onOpenComms = onOpenComms,
                         onOpenSettings = { onToggleSettingsSheet(true) },
@@ -378,7 +436,6 @@ fun GameScreen(
                         }
                     }
 
-                    // Dedicated Syndicate Comms (Mail) header bar with 1-tap Return to Game
                     if (page.currentUrl.contains("mail.php", ignoreCase = true)) {
                         Surface(
                             color = DccColors.Cyan.copy(alpha = 0.12f),
@@ -492,7 +549,6 @@ fun GameScreen(
             }
         }
 
-        // Subtle screen flash overlay for combat hits
         if (flashAlpha.value > 0.005f) {
             Box(
                 modifier = Modifier
@@ -534,20 +590,28 @@ fun GameScreen(
                 pvpNotificationsEnabled = pvpNotificationsEnabled,
                 notificationSoundsEnabled = notificationSoundsEnabled,
                 combatFlairEnabled = combatFlairEnabled,
-                soundEffectsEnabled = soundEffectsEnabled,
-                useLightTheme = useLightTheme,
+                combatFlairIntensity = combatFlairIntensity,
+                combatSoundsEnabled = combatSoundsEnabled,
+                menuSoundsEnabled = menuSoundsEnabled,
+                pulseTrainIndicator = pulseTrainIndicator,
+                keepScreenAwake = keepScreenAwake,
+                themeMode = themeMode,
                 narrativeFontSizeSp = narrativeFontSizeSp,
                 compactCombatLog = compactCombatLog,
                 availableUpdate = availableUpdate,
                 isCheckingUpdate = isCheckingUpdate,
+                updateCheckStatus = updateCheckStatus,
                 onUpdateAutoHeal = onUpdateAutoHeal,
                 onToggleNewDayNotifications = onToggleNewDayNotifications,
                 onToggleMailNotifications = onToggleMailNotifications,
                 onTogglePvpNotifications = onTogglePvpNotifications,
                 onToggleNotificationSounds = onToggleNotificationSounds,
-                onToggleCombatFlair = onToggleCombatFlair,
-                onToggleSoundEffects = onToggleSoundEffects,
-                onToggleLightTheme = onToggleLightTheme,
+                onUpdateCombatFlair = onUpdateCombatFlair,
+                onToggleCombatSounds = onToggleCombatSounds,
+                onToggleMenuSounds = onToggleMenuSounds,
+                onTogglePulseTrain = onTogglePulseTrain,
+                onToggleKeepScreenAwake = onToggleKeepScreenAwake,
+                onUpdateThemeMode = onUpdateThemeMode,
                 onUpdateNarrativeFontSize = onUpdateNarrativeFontSize,
                 onToggleCompactCombatLog = onToggleCompactCombatLog,
                 onCheckForUpdates = onCheckForUpdates,
@@ -569,20 +633,28 @@ private fun ClientSettingsSheetContent(
     pvpNotificationsEnabled: Boolean,
     notificationSoundsEnabled: Boolean,
     combatFlairEnabled: Boolean,
-    soundEffectsEnabled: Boolean,
-    useLightTheme: Boolean,
+    combatFlairIntensity: Int,
+    combatSoundsEnabled: Boolean,
+    menuSoundsEnabled: Boolean,
+    pulseTrainIndicator: Boolean,
+    keepScreenAwake: Boolean,
+    themeMode: AppThemeMode,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
+    updateCheckStatus: String?,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
     onToggleMailNotifications: (Boolean) -> Unit,
     onTogglePvpNotifications: (Boolean) -> Unit,
     onToggleNotificationSounds: (Boolean) -> Unit,
-    onToggleCombatFlair: (Boolean) -> Unit,
-    onToggleSoundEffects: (Boolean) -> Unit,
-    onToggleLightTheme: (Boolean) -> Unit,
+    onUpdateCombatFlair: (Boolean, Int) -> Unit,
+    onToggleCombatSounds: (Boolean) -> Unit,
+    onToggleMenuSounds: (Boolean) -> Unit,
+    onTogglePulseTrain: (Boolean) -> Unit,
+    onToggleKeepScreenAwake: (Boolean) -> Unit,
+    onUpdateThemeMode: (AppThemeMode) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
@@ -634,7 +706,6 @@ private fun ClientSettingsSheetContent(
             fontWeight = FontWeight.Bold,
         )
 
-        // Update Available banner if GitHub has a newer release
         if (availableUpdate != null) {
             Surface(
                 color = DccColors.Cyan.copy(alpha = 0.14f),
@@ -678,7 +749,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Appearance: Light / Dark Theme + Narrative Font Size
+        // Display & Theme (Auto / Dark / Light + Font Size + Keep Screen Awake + Pulse TRAIN!)
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -688,31 +759,42 @@ private fun ClientSettingsSheetContent(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.padding(14.dp)
             ) {
+                Text(
+                    text = "App Theme",
+                    color = DccColors.TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Syndicate Light Theme",
-                            color = DccColors.TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "Clean daylight palette with automatic LotGD text contrast.",
-                            color = DccColors.TextSecondary,
-                            fontSize = 12.sp,
-                        )
+                    for (mode in AppThemeMode.entries) {
+                        val selected = themeMode == mode
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (selected) DccColors.Cyan.copy(alpha = 0.18f) else DccColors.Surface
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (selected) DccColors.Cyan else DccColors.Outline,
+                                    shape = RoundedCornerShape(8.dp),
+                                )
+                                .clickable { onUpdateThemeMode(mode) }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = mode.label,
+                                color = if (selected) DccColors.Cyan else DccColors.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            )
+                        }
                     }
-                    Switch(
-                        checked = useLightTheme,
-                        onCheckedChange = onToggleLightTheme,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = DccColors.Background,
-                            checkedTrackColor = DccColors.Cyan,
-                        )
-                    )
                 }
 
                 HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
@@ -745,6 +827,64 @@ private fun ClientSettingsSheetContent(
                         activeTrackColor = DccColors.Cyan,
                     )
                 )
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Pulse XP Bar When Ready to Train",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Gently pulses the gold TRAIN! indicator when you have enough XP to level up.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = pulseTrainIndicator,
+                        onCheckedChange = onTogglePulseTrain,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Gold,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Keep Screen Awake",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Prevents your screen from timing out while playing.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = keepScreenAwake,
+                        onCheckedChange = onToggleKeepScreenAwake,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
             }
         }
 
@@ -820,7 +960,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Combat Flair, Sound Effects & Compact Combat Log
+        // Combat Flair (with Intensity Slider), Split Sound Controls & Compact Combat Log
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -836,20 +976,86 @@ private fun ClientSettingsSheetContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Combat Shake, Flash & Casino Animations",
+                            text = "Combat Shake, Flash & Animations",
                             color = DccColors.TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Adds subtle screen shake, hit flashes, haptics, and spinning slot reels.",
+                            text = "Screen shake, hit flashes, haptics, and spinning slot reels.",
                             color = DccColors.TextSecondary,
                             fontSize = 12.sp,
                         )
                     }
                     Switch(
                         checked = combatFlairEnabled,
-                        onCheckedChange = onToggleCombatFlair,
+                        onCheckedChange = { onUpdateCombatFlair(it, combatFlairIntensity) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+
+                if (combatFlairEnabled) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Effect Intensity",
+                            color = DccColors.TextSecondary,
+                            fontSize = 13.sp,
+                        )
+                        val intensityTag = when {
+                            combatFlairIntensity >= 85 -> "INTENSE ($combatFlairIntensity%)"
+                            combatFlairIntensity >= 55 -> "PUNCHY ($combatFlairIntensity%)"
+                            else -> "SUBTLE ($combatFlairIntensity%)"
+                        }
+                        Text(
+                            text = intensityTag,
+                            color = DccColors.Crimson,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Slider(
+                        value = combatFlairIntensity.toFloat(),
+                        onValueChange = { raw ->
+                            val snapped = ((raw / 10f).roundToInt() * 10).coerceIn(20, 100)
+                            onUpdateCombatFlair(true, snapped)
+                        },
+                        valueRange = 20f..100f,
+                        steps = 7,
+                        colors = SliderDefaults.colors(
+                            thumbColor = DccColors.Crimson,
+                            activeTrackColor = DccColors.Crimson,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Corridor & Combat Sound Effects",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Sword slashes, shield clangs, miss whooshes, explosions, spells, and loot.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = combatSoundsEnabled,
+                        onCheckedChange = onToggleCombatSounds,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DccColors.Background,
                             checkedTrackColor = DccColors.Cyan,
@@ -865,20 +1071,20 @@ private fun ClientSettingsSheetContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "In-App Synthesized Sound Effects",
+                            text = "Menu & Navigation Sounds",
                             color = DccColors.TextPrimary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "Sword slashes, shield clangs, miss whooshes, explosions, spells, and loot chimes.",
+                            text = "Subtle UI clicks when switching rooms, tabs, menus, and incoming mail.",
                             color = DccColors.TextSecondary,
                             fontSize = 12.sp,
                         )
                     }
                     Switch(
-                        checked = soundEffectsEnabled,
-                        onCheckedChange = onToggleSoundEffects,
+                        checked = menuSoundsEnabled,
+                        onCheckedChange = onToggleMenuSounds,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DccColors.Background,
                             checkedTrackColor = DccColors.Cyan,
@@ -917,7 +1123,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Notifications: New Game Day, In-Game Mail, PvP Attacks, and Notification Sounds
+        // Notifications
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -1054,7 +1260,7 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // About App + Manual Update Check
+        // About App + Update Check with live status feedback
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -1090,6 +1296,14 @@ private fun ClientSettingsSheetContent(
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                }
+                if (!updateCheckStatus.isNullOrBlank()) {
+                    Text(
+                        text = updateCheckStatus,
+                        color = if (updateCheckStatus.startsWith("Update available")) DccColors.Cyan else DccColors.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
                 AboutRow("App", "Dungeon Crawler World (lotgd-dcc)")
                 AboutRow("Version", "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
@@ -1138,7 +1352,6 @@ private fun CrawlerStatsSheetContent(
     sessionTelemetry: SessionTelemetry,
     modifier: Modifier = Modifier,
 ) {
-    // Live 1-second ticker so Earth Time, Dungeon Clock, and Next Cycle tick in real time
     var elapsedSec by remember(sections) { mutableIntStateOf(0) }
     LaunchedEffect(sections) {
         elapsedSec = 0
@@ -1168,7 +1381,6 @@ private fun CrawlerStatsSheetContent(
             fontWeight = FontWeight.Bold,
         )
 
-        // Session Loot & XP Recap Card
         Surface(
             color = DccColors.SurfaceVariant,
             border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.35f)),

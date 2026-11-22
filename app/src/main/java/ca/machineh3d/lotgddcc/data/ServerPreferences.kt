@@ -11,6 +11,21 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "dcc_client_prefs")
 
+enum class AppThemeMode(val storageKey: String, val label: String) {
+    SYSTEM("system", "Auto"),
+    DARK("dark", "Dark"),
+    LIGHT("light", "Light");
+
+    companion object {
+        fun fromKey(raw: String?, legacyLight: Boolean): AppThemeMode = when (raw?.lowercase()) {
+            "system" -> SYSTEM
+            "dark" -> DARK
+            "light" -> LIGHT
+            else -> if (legacyLight) LIGHT else DARK
+        }
+    }
+}
+
 data class ClientPrefsSnapshot(
     val lastServerUrl: String = "",
     val recentServerUrls: List<String> = emptyList(),
@@ -26,8 +41,12 @@ data class ClientPrefsSnapshot(
     val lastNotifiedUnreadMail: Int = 0,
     val lastKnownAlive: Boolean = true,
     val combatFlairEnabled: Boolean = true,
-    val soundEffectsEnabled: Boolean = false,
-    val useLightTheme: Boolean = false,
+    val combatFlairIntensity: Int = 60,
+    val combatSoundsEnabled: Boolean = true,
+    val menuSoundsEnabled: Boolean = false,
+    val pulseTrainIndicator: Boolean = true,
+    val keepScreenAwake: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.DARK,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
 )
@@ -49,8 +68,13 @@ class ServerPreferences(private val context: Context) {
         private val KEY_LAST_UNREAD_MAIL = intPreferencesKey("last_notified_unread_mail")
         private val KEY_LAST_KNOWN_ALIVE = booleanPreferencesKey("last_known_alive")
         private val KEY_COMBAT_FLAIR = booleanPreferencesKey("combat_flair_enabled")
-        private val KEY_SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
+        private val KEY_COMBAT_FLAIR_INTENSITY = intPreferencesKey("combat_flair_intensity")
+        private val KEY_COMBAT_SOUNDS = booleanPreferencesKey("combat_sounds_enabled")
+        private val KEY_MENU_SOUNDS = booleanPreferencesKey("menu_sounds_enabled")
+        private val KEY_PULSE_TRAIN = booleanPreferencesKey("pulse_train_indicator")
+        private val KEY_KEEP_SCREEN_AWAKE = booleanPreferencesKey("keep_screen_awake")
         private val KEY_USE_LIGHT_THEME = booleanPreferencesKey("use_light_theme")
+        private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         private val KEY_NARRATIVE_FONT_SP = intPreferencesKey("narrative_font_size_sp")
         private val KEY_COMPACT_COMBAT_LOG = booleanPreferencesKey("compact_combat_log")
         private const val URL_DELIMITER = "\n"
@@ -66,6 +90,7 @@ class ServerPreferences(private val context: Context) {
             .distinct()
         val lastUrl = prefs[KEY_SERVER_URL].orEmpty().ifBlank { recentList.firstOrNull().orEmpty() }
         val remember = prefs[KEY_REMEMBER_CREDS] ?: false
+        val legacyLight = prefs[KEY_USE_LIGHT_THEME] ?: false
 
         ClientPrefsSnapshot(
             lastServerUrl = lastUrl,
@@ -82,8 +107,12 @@ class ServerPreferences(private val context: Context) {
             lastNotifiedUnreadMail = (prefs[KEY_LAST_UNREAD_MAIL] ?: 0).coerceAtLeast(0),
             lastKnownAlive = prefs[KEY_LAST_KNOWN_ALIVE] ?: true,
             combatFlairEnabled = prefs[KEY_COMBAT_FLAIR] ?: true,
-            soundEffectsEnabled = prefs[KEY_SOUND_EFFECTS] ?: false,
-            useLightTheme = prefs[KEY_USE_LIGHT_THEME] ?: false,
+            combatFlairIntensity = (prefs[KEY_COMBAT_FLAIR_INTENSITY] ?: 60).coerceIn(20, 100),
+            combatSoundsEnabled = prefs[KEY_COMBAT_SOUNDS] ?: true,
+            menuSoundsEnabled = prefs[KEY_MENU_SOUNDS] ?: false,
+            pulseTrainIndicator = prefs[KEY_PULSE_TRAIN] ?: true,
+            keepScreenAwake = prefs[KEY_KEEP_SCREEN_AWAKE] ?: false,
+            themeMode = AppThemeMode.fromKey(prefs[KEY_THEME_MODE], legacyLight),
             narrativeFontSizeSp = (prefs[KEY_NARRATIVE_FONT_SP] ?: 15).coerceIn(13, 20),
             compactCombatLog = prefs[KEY_COMPACT_COMBAT_LOG] ?: false,
         )
@@ -153,69 +182,65 @@ class ServerPreferences(private val context: Context) {
     }
 
     suspend fun saveNewDayNotificationsEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_NEW_DAY_NOTIFS] = enabled
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_NEW_DAY_NOTIFS] = enabled }
     }
 
     suspend fun saveMailNotificationsEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_MAIL_NOTIFS] = enabled
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_MAIL_NOTIFS] = enabled }
     }
 
     suspend fun savePvpNotificationsEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_PVP_NOTIFS] = enabled
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_PVP_NOTIFS] = enabled }
     }
 
     suspend fun saveNotificationSoundsEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_NOTIF_SOUNDS] = enabled
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_NOTIF_SOUNDS] = enabled }
     }
 
     suspend fun saveLastNotifiedUnreadMail(count: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_LAST_UNREAD_MAIL] = count.coerceAtLeast(0)
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_LAST_UNREAD_MAIL] = count.coerceAtLeast(0) }
     }
 
     suspend fun saveLastKnownAlive(alive: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_LAST_KNOWN_ALIVE] = alive
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_LAST_KNOWN_ALIVE] = alive }
     }
 
-    suspend fun saveCombatFlairEnabled(enabled: Boolean) {
+    suspend fun saveCombatFlairSettings(enabled: Boolean, intensity: Int) {
         context.dataStore.edit { prefs ->
             prefs[KEY_COMBAT_FLAIR] = enabled
+            prefs[KEY_COMBAT_FLAIR_INTENSITY] = intensity.coerceIn(20, 100)
         }
     }
 
-    suspend fun saveSoundEffectsEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_SOUND_EFFECTS] = enabled
-        }
+    suspend fun saveCombatSoundsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_COMBAT_SOUNDS] = enabled }
     }
 
-    suspend fun saveUseLightTheme(useLight: Boolean) {
+    suspend fun saveMenuSoundsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_MENU_SOUNDS] = enabled }
+    }
+
+    suspend fun savePulseTrainIndicator(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_PULSE_TRAIN] = enabled }
+    }
+
+    suspend fun saveKeepScreenAwake(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_KEEP_SCREEN_AWAKE] = enabled }
+    }
+
+    suspend fun saveThemeMode(mode: AppThemeMode) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_USE_LIGHT_THEME] = useLight
+            prefs[KEY_THEME_MODE] = mode.storageKey
+            prefs[KEY_USE_LIGHT_THEME] = (mode == AppThemeMode.LIGHT)
         }
     }
 
     suspend fun saveNarrativeFontSizeSp(sizeSp: Int) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_NARRATIVE_FONT_SP] = sizeSp.coerceIn(13, 20)
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_NARRATIVE_FONT_SP] = sizeSp.coerceIn(13, 20) }
     }
 
     suspend fun saveCompactCombatLog(compact: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_COMPACT_COMBAT_LOG] = compact
-        }
+        context.dataStore.edit { prefs -> prefs[KEY_COMPACT_COMBAT_LOG] = compact }
     }
 
     fun normalizeUrl(raw: String): String {
