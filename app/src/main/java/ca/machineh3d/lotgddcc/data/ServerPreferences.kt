@@ -20,7 +20,12 @@ data class ClientPrefsSnapshot(
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
+    val mailNotificationsEnabled: Boolean = false,
+    val lastNotifiedUnreadMail: Int = 0,
     val combatFlairEnabled: Boolean = true,
+    val useLightTheme: Boolean = false,
+    val narrativeFontSizeSp: Int = 15,
+    val compactCombatLog: Boolean = false,
 )
 
 class ServerPreferences(private val context: Context) {
@@ -34,7 +39,12 @@ class ServerPreferences(private val context: Context) {
         private val KEY_AUTO_HEAL_ENABLED = booleanPreferencesKey("auto_heal_enabled")
         private val KEY_AUTO_HEAL_THRESHOLD = intPreferencesKey("auto_heal_threshold")
         private val KEY_NEW_DAY_NOTIFS = booleanPreferencesKey("new_day_notifications_enabled")
+        private val KEY_MAIL_NOTIFS = booleanPreferencesKey("mail_notifications_enabled")
+        private val KEY_LAST_UNREAD_MAIL = intPreferencesKey("last_notified_unread_mail")
         private val KEY_COMBAT_FLAIR = booleanPreferencesKey("combat_flair_enabled")
+        private val KEY_USE_LIGHT_THEME = booleanPreferencesKey("use_light_theme")
+        private val KEY_NARRATIVE_FONT_SP = intPreferencesKey("narrative_font_size_sp")
+        private val KEY_COMPACT_COMBAT_LOG = booleanPreferencesKey("compact_combat_log")
         private const val URL_DELIMITER = "\n"
         private const val MAX_RECENT_URLS = 8
     }
@@ -58,7 +68,12 @@ class ServerPreferences(private val context: Context) {
             autoHealEnabled = prefs[KEY_AUTO_HEAL_ENABLED] ?: true,
             autoHealThresholdPercent = (prefs[KEY_AUTO_HEAL_THRESHOLD] ?: 35).coerceIn(10, 90),
             newDayNotificationsEnabled = prefs[KEY_NEW_DAY_NOTIFS] ?: false,
+            mailNotificationsEnabled = prefs[KEY_MAIL_NOTIFS] ?: false,
+            lastNotifiedUnreadMail = (prefs[KEY_LAST_UNREAD_MAIL] ?: 0).coerceAtLeast(0),
             combatFlairEnabled = prefs[KEY_COMBAT_FLAIR] ?: true,
+            useLightTheme = prefs[KEY_USE_LIGHT_THEME] ?: false,
+            narrativeFontSizeSp = (prefs[KEY_NARRATIVE_FONT_SP] ?: 15).coerceIn(13, 20),
+            compactCombatLog = prefs[KEY_COMPACT_COMBAT_LOG] ?: false,
         )
     }
 
@@ -131,9 +146,39 @@ class ServerPreferences(private val context: Context) {
         }
     }
 
+    suspend fun saveMailNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_MAIL_NOTIFS] = enabled
+        }
+    }
+
+    suspend fun saveLastNotifiedUnreadMail(count: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_LAST_UNREAD_MAIL] = count.coerceAtLeast(0)
+        }
+    }
+
     suspend fun saveCombatFlairEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_COMBAT_FLAIR] = enabled
+        }
+    }
+
+    suspend fun saveUseLightTheme(useLight: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_USE_LIGHT_THEME] = useLight
+        }
+    }
+
+    suspend fun saveNarrativeFontSizeSp(sizeSp: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NARRATIVE_FONT_SP] = sizeSp.coerceIn(13, 20)
+        }
+    }
+
+    suspend fun saveCompactCombatLog(compact: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_COMPACT_COMBAT_LOG] = compact
         }
     }
 

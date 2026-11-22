@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -25,19 +26,34 @@ import androidx.compose.ui.unit.sp
 import ca.machineh3d.lotgddcc.model.TextSpan
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
+private val COMPACT_COMBAT_SKIP_REGEX = Regex(
+    """(?:'s\s+Hitpoints\s*(?:\(Level\s*\d+\))?\s*:|End of Round:|~ ~ ~ Fight ~ ~ ~)""",
+    RegexOption.IGNORE_CASE,
+)
+
 @Composable
 fun NarrativeView(
     paragraphs: List<List<TextSpan>>,
     onLinkClick: (String) -> Unit,
+    fontSizeSp: Int = 15,
+    compactCombatLog: Boolean = false,
+    isCombatPage: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val isLight = DccColors.isLight
+    val lineHeightSp = (fontSizeSp * 1.45f).toInt()
+
     Column(
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compactCombatLog && isCombatPage) 6.dp else 10.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         for (spans in paragraphs) {
             val plain = spans.joinToString("") { it.text }.trim()
             if (plain.isEmpty()) continue
+
+            if (compactCombatLog && isCombatPage && COMPACT_COMBAT_SKIP_REGEX.containsMatchIn(plain)) {
+                continue
+            }
 
             val isSystemAiBanner = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("SECRET ACHIEVEMENT", ignoreCase = true) ||
@@ -45,9 +61,14 @@ fun NarrativeView(
 
             val annotated = buildAnnotatedString {
                 for (span in spans) {
-                    val parsedColor = parseHexColor(span.color) ?: DccColors.TextPrimary
+                    val rawColor = parseHexColor(span.color)
+                    val adaptedColor = when {
+                        rawColor == null -> DccColors.TextPrimary
+                        isLight -> adaptColorForLightTheme(rawColor)
+                        else -> rawColor
+                    }
                     val style = SpanStyle(
-                        color = parsedColor,
+                        color = adaptedColor,
                         fontWeight = if (span.bold) FontWeight.Bold else FontWeight.Normal,
                         fontStyle = if (span.italic) FontStyle.Italic else FontStyle.Normal,
                     )
@@ -85,20 +106,36 @@ fun NarrativeView(
                 ) {
                     Text(
                         text = annotated,
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp,
+                        fontSize = fontSizeSp.sp,
+                        lineHeight = lineHeightSp.sp,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
             } else {
                 Text(
                     text = annotated,
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
+                    fontSize = fontSizeSp.sp,
+                    lineHeight = lineHeightSp.sp,
                     color = DccColors.TextPrimary,
                 )
             }
         }
+    }
+}
+
+private fun adaptColorForLightTheme(color: Color): Color {
+    // Darken bright neon/pastel LotGD text colors so they remain crisp on light backgrounds
+    val lum = color.luminance()
+    return if (lum > 0.42f) {
+        val factor = if (lum > 0.78f) 0.42f else 0.58f
+        Color(
+            red = (color.red * factor).coerceIn(0f, 1f),
+            green = (color.green * factor).coerceIn(0f, 1f),
+            blue = (color.blue * factor).coerceIn(0f, 1f),
+            alpha = color.alpha,
+        )
+    } else {
+        color
     }
 }
 

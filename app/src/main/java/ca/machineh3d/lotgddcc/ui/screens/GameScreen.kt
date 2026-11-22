@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,10 +23,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -33,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,11 +65,11 @@ import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
 import ca.machineh3d.lotgddcc.ui.components.BattleHudCard
 import ca.machineh3d.lotgddcc.ui.components.CasinoVisualPanel
-import ca.machineh3d.lotgddcc.ui.components.filterRedundantWebBattleHudParagraphs
 import ca.machineh3d.lotgddcc.ui.components.NarrativeView
 import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
 import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
+import ca.machineh3d.lotgddcc.ui.components.filterRedundantWebBattleHudParagraphs
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -80,13 +85,20 @@ fun GameScreen(
     page: DccPageResponse,
     isLoading: Boolean,
     errorMessage: String?,
+    canRetry: Boolean,
     showStatsSheet: Boolean,
     showSettingsSheet: Boolean,
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
+    mailNotificationsEnabled: Boolean,
     combatFlairEnabled: Boolean,
+    useLightTheme: Boolean,
+    narrativeFontSizeSp: Int,
+    compactCombatLog: Boolean,
     onNavigate: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onRetry: () -> Unit,
     onSubmitForm: (GameForm, Map<String, String>) -> Unit,
     onRecoverBadNav: () -> Unit,
     onOpenComms: () -> Unit,
@@ -94,7 +106,11 @@ fun GameScreen(
     onToggleSettingsSheet: (Boolean) -> Unit,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
+    onToggleMailNotifications: (Boolean) -> Unit,
     onToggleCombatFlair: (Boolean) -> Unit,
+    onToggleLightTheme: (Boolean) -> Unit,
+    onUpdateNarrativeFontSize: (Int) -> Unit,
+    onToggleCompactCombatLog: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
@@ -105,6 +121,10 @@ fun GameScreen(
     val flashAlpha = remember { Animatable(0f) }
     var flashColor by remember { mutableStateOf(DccColors.Crimson) }
     var previousHp by remember { mutableStateOf<Int?>(null) }
+
+    val allNavItems = remember(page.navGroups) {
+        page.navGroups.flatMap { it.items }
+    }
 
     LaunchedEffect(page.currentUrl, page.title, page.paragraphs.size, page.tables.size) {
         scrollState.scrollTo(0)
@@ -163,6 +183,35 @@ fun GameScreen(
                         onOpenStats = { onToggleStatsSheet(true) },
                         onOpenComms = onOpenComms,
                         onOpenSettings = { onToggleSettingsSheet(true) },
+                        onTapHpBar = {
+                            val player = page.player
+                            val healerLink = allNavItems.firstOrNull {
+                                it.url.contains("healer", ignoreCase = true) ||
+                                    it.label.contains("healer", ignoreCase = true) ||
+                                    it.label.contains("medbay", ignoreCase = true)
+                            }
+                            if (player != null && player.hp < player.maxHp && healerLink != null) {
+                                onNavigate(healerLink.url)
+                            } else {
+                                onToggleStatsSheet(true)
+                            }
+                        },
+                        onTapXpBar = {
+                            val player = page.player
+                            val trainerLink = allNavItems.firstOrNull {
+                                it.url.contains("train", ignoreCase = true) ||
+                                    it.label.contains("train", ignoreCase = true) ||
+                                    it.label.contains("master", ignoreCase = true)
+                            }
+                            val ready = player != null &&
+                                player.level < player.maxLevel &&
+                                player.experience >= player.expNextLevel
+                            if (ready && trainerLink != null) {
+                                onNavigate(trainerLink.url)
+                            } else {
+                                onToggleStatsSheet(true)
+                            }
+                        },
                         onLogout = onLogout,
                     )
                     if (isLoading) {
@@ -190,7 +239,9 @@ fun GameScreen(
                 )
             }
         ) { innerPadding ->
-            Box(
+            PullToRefreshBox(
+                isRefreshing = isLoading,
+                onRefresh = onRefresh,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
@@ -210,12 +261,78 @@ fun GameScreen(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = errorMessage,
-                                color = DccColors.TextPrimary,
-                                fontSize = 13.sp,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.padding(12.dp)
-                            )
+                            ) {
+                                Text(
+                                    text = errorMessage,
+                                    color = DccColors.TextPrimary,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (canRetry) {
+                                    Button(
+                                        onClick = onRetry,
+                                        enabled = !isLoading,
+                                        colors = ButtonDefaults.buttonColors(containerColor = DccColors.Crimson),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    ) {
+                                        Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Dedicated Syndicate Comms (Mail) header bar with 1-tap Return to Game
+                    if (page.currentUrl.contains("mail.php", ignoreCase = true)) {
+                        Surface(
+                            color = DccColors.Cyan.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.45f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "SYNDICATE COMMS",
+                                        color = DccColors.Cyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 1.1.sp,
+                                    )
+                                    Text(
+                                        text = if (page.mail.unread > 0) {
+                                            "${page.mail.unread} unread message(s)"
+                                        } else {
+                                            "Inbox synced"
+                                        },
+                                        color = DccColors.TextSecondary,
+                                        fontSize = 12.sp,
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onNavigate("village.php") },
+                                    enabled = !isLoading,
+                                    border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.6f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "Return to Game",
+                                        color = DccColors.Cyan,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -228,11 +345,22 @@ fun GameScreen(
                         animate = combatFlairEnabled,
                     )
 
+                    val isCombatScreen = remember(page.pageType, page.paragraphs) {
+                        page.pageType == "combat" ||
+                            page.paragraphs.any { line ->
+                                val t = line.joinToString("") { it.text }
+                                t.contains("'s Hitpoints", ignoreCase = true)
+                            }
+                    }
+
                     NarrativeView(
                         paragraphs = remember(page.paragraphs) {
                             filterRedundantWebBattleHudParagraphs(page.paragraphs)
                         },
                         onLinkClick = onNavigate,
+                        fontSizeSp = narrativeFontSizeSp,
+                        compactCombatLog = compactCombatLog,
+                        isCombatPage = isCombatScreen,
                     )
 
                     val displayTables = remember(page.tables, page.forms, page.currentUrl) {
@@ -310,10 +438,18 @@ fun GameScreen(
                 autoHealEnabled = autoHealEnabled,
                 autoHealThresholdPercent = autoHealThresholdPercent,
                 newDayNotificationsEnabled = newDayNotificationsEnabled,
+                mailNotificationsEnabled = mailNotificationsEnabled,
                 combatFlairEnabled = combatFlairEnabled,
+                useLightTheme = useLightTheme,
+                narrativeFontSizeSp = narrativeFontSizeSp,
+                compactCombatLog = compactCombatLog,
                 onUpdateAutoHeal = onUpdateAutoHeal,
                 onToggleNewDayNotifications = onToggleNewDayNotifications,
+                onToggleMailNotifications = onToggleMailNotifications,
                 onToggleCombatFlair = onToggleCombatFlair,
+                onToggleLightTheme = onToggleLightTheme,
+                onUpdateNarrativeFontSize = onUpdateNarrativeFontSize,
+                onToggleCompactCombatLog = onToggleCompactCombatLog,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -328,21 +464,53 @@ private fun ClientSettingsSheetContent(
     autoHealEnabled: Boolean,
     autoHealThresholdPercent: Int,
     newDayNotificationsEnabled: Boolean,
+    mailNotificationsEnabled: Boolean,
     combatFlairEnabled: Boolean,
+    useLightTheme: Boolean,
+    narrativeFontSizeSp: Int,
+    compactCombatLog: Boolean,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
+    onToggleMailNotifications: (Boolean) -> Unit,
     onToggleCombatFlair: (Boolean) -> Unit,
+    onToggleLightTheme: (Boolean) -> Unit,
+    onUpdateNarrativeFontSize: (Int) -> Unit,
+    onToggleCompactCombatLog: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    var pendingPermTarget by remember { mutableStateOf<String?>(null) }
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        onToggleNewDayNotifications(granted)
+        when (pendingPermTarget) {
+            "newday" -> onToggleNewDayNotifications(granted)
+            "mail" -> onToggleMailNotifications(granted)
+        }
+        pendingPermTarget = null
+    }
+
+    fun requestNotifToggle(target: String, wantEnabled: Boolean, onApply: (Boolean) -> Unit) {
+        if (!wantEnabled) {
+            onApply(false)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                onApply(true)
+            } else {
+                pendingPermTarget = target
+                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            onApply(true)
+        }
     }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
@@ -355,6 +523,77 @@ private fun ClientSettingsSheetContent(
             fontWeight = FontWeight.Bold,
         )
 
+        // Appearance: Light / Dark Theme + Narrative Font Size
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Syndicate Light Theme",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Clean daylight palette with automatic LotGD text contrast.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = useLightTheme,
+                        onCheckedChange = onToggleLightTheme,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Narrative Font Size",
+                        color = DccColors.TextSecondary,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        text = "${narrativeFontSizeSp}sp",
+                        color = DccColors.Cyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Slider(
+                    value = narrativeFontSizeSp.toFloat(),
+                    onValueChange = { raw ->
+                        onUpdateNarrativeFontSize(raw.roundToInt().coerceIn(13, 20))
+                    },
+                    valueRange = 13f..20f,
+                    steps = 6,
+                    colors = SliderDefaults.colors(
+                        thumbColor = DccColors.Cyan,
+                        activeTrackColor = DccColors.Cyan,
+                    )
+                )
+            }
+        }
+
+        // Auto-Heal Threshold
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
@@ -426,98 +665,152 @@ private fun ClientSettingsSheetContent(
             }
         }
 
-        // Combat & Casino Flair toggle
+        // Combat & Casino Flair + Compact Combat Log
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(14.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Combat Shake, Flash & Casino Animations",
-                        color = DccColors.TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Adds subtle screen shake, hit flashes, haptics, and spinning slot reels.",
-                        color = DccColors.TextSecondary,
-                        fontSize = 12.sp,
-                    )
-                }
-                Switch(
-                    checked = combatFlairEnabled,
-                    onCheckedChange = onToggleCombatFlair,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = DccColors.Background,
-                        checkedTrackColor = DccColors.Cyan,
-                    )
-                )
-            }
-        }
-
-        Surface(
-            color = DccColors.SurfaceVariant,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "New Game Day Notifications",
-                        color = DccColors.TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    val countdownHint = if (nextNewDaySeconds > 0) {
-                        "Alerts when Stamina resets (next day in ${formatDuration(nextNewDaySeconds)})."
-                    } else {
-                        "Alerts when a new in-game day begins (requires Bridge v4+)."
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Combat Shake, Flash & Casino Animations",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Adds subtle screen shake, hit flashes, haptics, and spinning slot reels.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
                     }
-                    Text(
-                        text = countdownHint,
-                        color = DccColors.TextSecondary,
-                        fontSize = 12.sp,
+                    Switch(
+                        checked = combatFlairEnabled,
+                        onCheckedChange = onToggleCombatFlair,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
                     )
                 }
-                Switch(
-                    checked = newDayNotificationsEnabled,
-                    onCheckedChange = { wantEnabled ->
-                        if (!wantEnabled) {
-                            onToggleNewDayNotifications(false)
-                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            val granted = ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (granted) {
-                                onToggleNewDayNotifications(true)
-                            } else {
-                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        } else {
-                            onToggleNewDayNotifications(true)
-                        }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = DccColors.Background,
-                        checkedTrackColor = DccColors.Gold,
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Compact Combat Log",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Hides redundant HP lines below the Battle HUD for cleaner combat rounds.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = compactCombatLog,
+                        onCheckedChange = onToggleCompactCombatLog,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
                     )
-                )
+                }
             }
         }
 
+        // Notifications: New Game Day + In-Game Mail
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "New Game Day Notifications",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        val countdownHint = if (nextNewDaySeconds > 0) {
+                            "Alerts when Stamina resets (next day in ${formatDuration(nextNewDaySeconds)})."
+                        } else {
+                            "Alerts when a new in-game day begins (requires Bridge v4+)."
+                        }
+                        Text(
+                            text = countdownHint,
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = newDayNotificationsEnabled,
+                        onCheckedChange = { want ->
+                            requestNotifToggle("newday", want, onToggleNewDayNotifications)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Gold,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "In-Game Mail Notifications",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Alerts when new Syndicate Comms arrive (checks every 15 min in background).",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = mailNotificationsEnabled,
+                        onCheckedChange = { want ->
+                            requestNotifToggle("mail", want, onToggleMailNotifications)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Gold,
+                        )
+                    )
+                }
+            }
+        }
+
+        // About App
         Surface(
             color = DccColors.SurfaceVariant,
             shape = RoundedCornerShape(12.dp),

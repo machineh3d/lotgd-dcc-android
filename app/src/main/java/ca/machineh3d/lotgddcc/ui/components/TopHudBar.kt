@@ -50,6 +50,8 @@ fun TopHudBar(
     onOpenStats: () -> Unit,
     onOpenComms: () -> Unit,
     onOpenSettings: () -> Unit,
+    onTapHpBar: () -> Unit,
+    onTapXpBar: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Surface(
@@ -164,7 +166,7 @@ fun TopHudBar(
                 }
             }
 
-            // Row 2: Compact side-by-side HP bar + XP-to-Trainer bar + Stamina / Gold / Tokens
+            // Row 2: Tap-to-act HP bar + XP-to-Trainer bar + Stamina / Gold / Tokens
             if (player != null) {
                 Spacer(Modifier.height(6.dp))
                 val hpFraction = (player.hp.toFloat() / player.maxHp.coerceAtLeast(1).toFloat())
@@ -205,7 +207,13 @@ fun TopHudBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onTapHpBar)
+                            .padding(vertical = 2.dp)
+                    ) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
@@ -237,7 +245,13 @@ fun TopHudBar(
                         )
                     }
 
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onTapXpBar)
+                            .padding(vertical = 2.dp)
+                    ) {
                         Row(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()

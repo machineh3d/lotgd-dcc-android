@@ -7,6 +7,7 @@ import ca.machineh3d.lotgddcc.data.DccApiClient
 import ca.machineh3d.lotgddcc.data.ServerPreferences
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
+import ca.machineh3d.lotgddcc.notifications.MailNotificationScheduler
 import ca.machineh3d.lotgddcc.notifications.NewDayScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,9 +25,14 @@ data class GameUiState(
     val autoHealEnabled: Boolean = true,
     val autoHealThresholdPercent: Int = 35,
     val newDayNotificationsEnabled: Boolean = false,
+    val mailNotificationsEnabled: Boolean = false,
     val combatFlairEnabled: Boolean = true,
+    val useLightTheme: Boolean = false,
+    val narrativeFontSizeSp: Int = 15,
+    val compactCombatLog: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val canRetry: Boolean = false,
     val page: DccPageResponse? = null,
     val isInCreateFlow: Boolean = false,
     val showStatsSheet: Boolean = false,
@@ -42,9 +48,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
+    private var lastKnownUnreadMail: Int = 0
+    private var lastFailedUrl: String? = null
+    private var lastFailedForm: Pair<GameForm, Map<String, String>>? = null
+    private var pendingOpenMailOnResume: Boolean = false
+
     init {
         viewModelScope.launch {
             val snap = prefs.prefsFlow.first()
+            lastKnownUnreadMail = snap.lastNotifiedUnreadMail
             _uiState.update {
                 it.copy(
                     serverUrl = snap.lastServerUrl,
@@ -55,12 +67,28 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     autoHealEnabled = snap.autoHealEnabled,
                     autoHealThresholdPercent = snap.autoHealThresholdPercent,
                     newDayNotificationsEnabled = snap.newDayNotificationsEnabled,
+                    mailNotificationsEnabled = snap.mailNotificationsEnabled,
                     combatFlairEnabled = snap.combatFlairEnabled,
+                    useLightTheme = snap.useLightTheme,
+                    narrativeFontSizeSp = snap.narrativeFontSizeSp,
+                    compactCombatLog = snap.compactCombatLog,
                 )
+            }
+            if (snap.mailNotificationsEnabled) {
+                MailNotificationScheduler.startPeriodicPolling(appContext)
             }
             if (snap.lastServerUrl.isNotBlank()) {
                 resumeSession(snap.lastServerUrl)
             }
+        }
+    }
+
+    fun requestOpenMailFromNotification() {
+        val currentPage = _uiState.value.page
+        if (currentPage?.player?.loggedIn == true) {
+            openSyndicateComms()
+        } else {
+            pendingOpenMailOnResume = true
         }
     }
 
@@ -74,13 +102,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun syncMailNotification(resp: DccPageResponse) {
+        if (resp.player?.loggedIn != true) return
+        val unread = resp.mail.unread
+        if (_uiState.value.mailNotificationsEnabled && unread > lastKnownUnreadMail) {
+            MailNotificationScheduler.postMailNotification(appContext, unread)
+        }
+        if (unread != lastKnownUnreadMail) {
+            lastKnownUnreadMail = unread
+            viewModelScope.launch {
+                prefs.saveLastNotifiedUnreadMail(unread)
+            }
+        }
+    }
+
     private fun resumeSession(url: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, canRetry = false) }
             try {
-                val resp = api.fetchPage(url, "village.php")
+                val startTarget = if (pendingOpenMailOnResume) "mail.php" else "village.php"
+                pendingOpenMailOnResume = false
+                val resp = api.fetchPage(url, startTarget)
                 if (resp.player?.loggedIn == true) {
                     syncNewDayAlarm(resp)
+                    syncMailNotification(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     _uiState.update { it.copy(isLoading = false, page = null) }
@@ -120,6 +165,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     savedPassword = if (rememberCredentials) password else "",
                     isLoading = true,
                     errorMessage = null,
+                    canRetry = false,
                     isInCreateFlow = false,
                 )
             }
@@ -127,6 +173,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 val resp = api.login(normalized, username, password)
                 if (resp.player?.loggedIn == true) {
                     syncNewDayAlarm(resp)
+                    syncMailNotification(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     val serverHint = resp.paragraphs
@@ -169,6 +216,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     recentServerUrls = updatedSnap.recentServerUrls,
                     isLoading = true,
                     errorMessage = null,
+                    canRetry = false,
                 )
             }
             try {
@@ -221,10 +269,59 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateMailNotifications(enabled: Boolean) {
+        _uiState.update { it.copy(mailNotificationsEnabled = enabled) }
+        viewModelScope.launch {
+            prefs.saveMailNotificationsEnabled(enabled)
+            if (enabled) {
+                MailNotificationScheduler.startPeriodicPolling(appContext)
+            } else {
+                MailNotificationScheduler.cancel(appContext)
+            }
+        }
+    }
+
     fun updateCombatFlair(enabled: Boolean) {
         _uiState.update { it.copy(combatFlairEnabled = enabled) }
         viewModelScope.launch {
             prefs.saveCombatFlairEnabled(enabled)
+        }
+    }
+
+    fun updateUseLightTheme(useLight: Boolean) {
+        _uiState.update { it.copy(useLightTheme = useLight) }
+        viewModelScope.launch {
+            prefs.saveUseLightTheme(useLight)
+        }
+    }
+
+    fun updateNarrativeFontSize(sizeSp: Int) {
+        val clamped = sizeSp.coerceIn(13, 20)
+        _uiState.update { it.copy(narrativeFontSizeSp = clamped) }
+        viewModelScope.launch {
+            prefs.saveNarrativeFontSizeSp(clamped)
+        }
+    }
+
+    fun updateCompactCombatLog(compact: Boolean) {
+        _uiState.update { it.copy(compactCombatLog = compact) }
+        viewModelScope.launch {
+            prefs.saveCompactCombatLog(compact)
+        }
+    }
+
+    fun refreshCurrentPage() {
+        val url = _uiState.value.page?.currentUrl?.takeIf { it.isNotBlank() } ?: "village.php"
+        navigate(url)
+    }
+
+    fun retryLastAction() {
+        val failedForm = lastFailedForm
+        val failedUrl = lastFailedUrl
+        when {
+            failedForm != null -> submitForm(failedForm.first, failedForm.second)
+            !failedUrl.isNullOrBlank() -> navigate(failedUrl)
+            else -> refreshCurrentPage()
         }
     }
 
@@ -233,12 +330,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank() || url.isBlank()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, canRetry = false) }
             try {
                 val resp = api.fetchPage(baseUrl, url)
+                lastFailedUrl = null
+                lastFailedForm = null
                 val loggedOut = resp.player == null && !_uiState.value.isInCreateFlow && resp.pageType == "login"
                 if (!loggedOut) {
                     syncNewDayAlarm(resp)
+                    syncMailNotification(resp)
                 }
                 _uiState.update {
                     it.copy(
@@ -248,8 +348,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             } catch (e: Exception) {
+                lastFailedUrl = url
+                lastFailedForm = null
                 _uiState.update {
-                    it.copy(isLoading = false, errorMessage = e.message ?: "Request failed.")
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Request failed. Check your connection.",
+                        canRetry = true,
+                    )
                 }
             }
         }
@@ -262,7 +368,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (baseUrl.isBlank()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, canRetry = false) }
             try {
                 val resp = api.submitForm(
                     baseUrl = baseUrl,
@@ -271,7 +377,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     method = form.method,
                     fields = values,
                 )
+                lastFailedUrl = null
+                lastFailedForm = null
                 syncNewDayAlarm(resp)
+                syncMailNotification(resp)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -280,8 +389,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             } catch (e: Exception) {
+                lastFailedForm = form to values
+                lastFailedUrl = null
                 _uiState.update {
-                    it.copy(isLoading = false, errorMessage = e.message ?: "Form submission failed.")
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = e.message ?: "Form submission failed.",
+                        canRetry = true,
+                    )
                 }
             }
         }
@@ -314,6 +429,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 showStatsSheet = false,
                 showSettingsSheet = false,
                 errorMessage = null,
+                canRetry = false,
             )
         }
     }
@@ -332,6 +448,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     showStatsSheet = false,
                     showSettingsSheet = false,
                     errorMessage = null,
+                    canRetry = false,
                 )
             }
         }
