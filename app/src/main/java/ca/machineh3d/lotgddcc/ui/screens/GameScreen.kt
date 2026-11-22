@@ -58,7 +58,9 @@ import ca.machineh3d.lotgddcc.model.CharStatSection
 import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
+import ca.machineh3d.lotgddcc.ui.components.BattleHudCard
 import ca.machineh3d.lotgddcc.ui.components.CasinoVisualPanel
+import ca.machineh3d.lotgddcc.ui.components.filterRedundantWebBattleHudParagraphs
 import ca.machineh3d.lotgddcc.ui.components.NarrativeView
 import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
 import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
@@ -217,13 +219,19 @@ fun GameScreen(
                         }
                     }
 
+                    BattleHudCard(
+                        page = page,
+                    )
+
                     CasinoVisualPanel(
                         page = page,
                         animate = combatFlairEnabled,
                     )
 
                     NarrativeView(
-                        paragraphs = page.paragraphs,
+                        paragraphs = remember(page.paragraphs) {
+                            filterRedundantWebBattleHudParagraphs(page.paragraphs)
+                        },
                         onLinkClick = onNavigate,
                     )
 
