@@ -37,7 +37,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +64,8 @@ fun TopHudBar(
     mail: MailState,
     friendsOnline: Int,
     friendsPending: Int,
+    nextNewDaySeconds: Int,
+    secondsPerGameDay: Int,
     pulseTrainIndicator: Boolean,
     onOpenStats: () -> Unit,
     onOpenComms: () -> Unit,
@@ -372,6 +380,63 @@ fun TopHudBar(
                         tint = DccColors.Violet,
                         contentDescription = "Sponsor Tokens"
                     )
+                }
+
+                // Slim live-ticking Time-to-Next-Day progress bar
+                if (nextNewDaySeconds > 0) {
+                    var elapsedSec by remember(nextNewDaySeconds) { mutableIntStateOf(0) }
+                    LaunchedEffect(nextNewDaySeconds) {
+                        elapsedSec = 0
+                        while (true) {
+                            delay(1000L)
+                            elapsedSec += 1
+                        }
+                    }
+
+                    val cycleLen = if (secondsPerGameDay > 0) secondsPerGameDay else 21600
+                    val liveRem = (nextNewDaySeconds - elapsedSec).let {
+                        if (it < 0) (cycleLen + (it % cycleLen)) % cycleLen else it
+                    }
+                    val dayProgress = ((cycleLen - liveRem).toFloat() / cycleLen.toFloat()).coerceIn(0f, 1f)
+                    val soon = liveRem <= 900 // final 15 minutes
+                    val dayAccent = if (soon) DccColors.Gold else DccColors.Cyan
+                    val hrs = liveRem / 3600
+                    val mins = (liveRem % 3600) / 60
+                    val secs = liveRem % 60
+                    val countdownText = String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
+
+                    Spacer(Modifier.height(5.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable(onClick = onOpenStats)
+                    ) {
+                        Text(
+                            text = "DAY",
+                            color = dayAccent,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
+                        )
+                        LinearProgressIndicator(
+                            progress = { dayProgress },
+                            color = dayAccent,
+                            trackColor = DccColors.SurfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                        )
+                        Text(
+                            text = countdownText,
+                            color = if (soon) DccColors.Gold else DccColors.TextSecondary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }

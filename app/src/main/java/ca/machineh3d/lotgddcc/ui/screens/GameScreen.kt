@@ -343,6 +343,8 @@ fun GameScreen(
                         mail = page.mail,
                         friendsOnline = friendsOnlineCount,
                         friendsPending = friendsPendingCount,
+                        nextNewDaySeconds = page.nextNewDaySeconds,
+                        secondsPerGameDay = page.secondsPerGameDay,
                         pulseTrainIndicator = pulseTrainIndicator,
                         onOpenStats = { onToggleStatsSheet(true) },
                         onOpenComms = onOpenComms,
