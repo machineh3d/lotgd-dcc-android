@@ -83,6 +83,7 @@ fun LoginScreen(
     onOpenRegistration: (serverUrl: String) -> Unit,
     onRemoveRecentUrl: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var serverUrl by remember { mutableStateOf(initialServerUrl) }
     var username by remember { mutableStateOf(initialUsername) }
     var password by remember { mutableStateOf(initialPassword) }
