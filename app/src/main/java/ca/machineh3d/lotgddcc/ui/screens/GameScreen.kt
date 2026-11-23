@@ -115,8 +115,13 @@ fun GameScreen(
     themeMode: AppThemeMode,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
+    crtScanlinesEnabled: Boolean,
+    hudVignetteEnabled: Boolean,
+    neonEdgeGlowEnabled: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
+    isDownloadingUpdate: Boolean,
+    updateDownloadProgress: Float,
     updateCheckStatus: String?,
     sessionTelemetry: SessionTelemetry,
     onNavigate: (String) -> Unit,
@@ -140,7 +145,11 @@ fun GameScreen(
     onUpdateThemeMode: (AppThemeMode) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
+    onToggleCrtScanlines: (Boolean) -> Unit,
+    onToggleHudVignette: (Boolean) -> Unit,
+    onToggleNeonEdgeGlow: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -598,8 +607,13 @@ fun GameScreen(
                 themeMode = themeMode,
                 narrativeFontSizeSp = narrativeFontSizeSp,
                 compactCombatLog = compactCombatLog,
+                crtScanlinesEnabled = crtScanlinesEnabled,
+                hudVignetteEnabled = hudVignetteEnabled,
+                neonEdgeGlowEnabled = neonEdgeGlowEnabled,
                 availableUpdate = availableUpdate,
                 isCheckingUpdate = isCheckingUpdate,
+                isDownloadingUpdate = isDownloadingUpdate,
+                updateDownloadProgress = updateDownloadProgress,
                 updateCheckStatus = updateCheckStatus,
                 onUpdateAutoHeal = onUpdateAutoHeal,
                 onToggleNewDayNotifications = onToggleNewDayNotifications,
@@ -614,7 +628,11 @@ fun GameScreen(
                 onUpdateThemeMode = onUpdateThemeMode,
                 onUpdateNarrativeFontSize = onUpdateNarrativeFontSize,
                 onToggleCompactCombatLog = onToggleCompactCombatLog,
+                onToggleCrtScanlines = onToggleCrtScanlines,
+                onToggleHudVignette = onToggleHudVignette,
+                onToggleNeonEdgeGlow = onToggleNeonEdgeGlow,
                 onCheckForUpdates = onCheckForUpdates,
+                onInstallUpdate = onInstallUpdate,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -641,8 +659,13 @@ private fun ClientSettingsSheetContent(
     themeMode: AppThemeMode,
     narrativeFontSizeSp: Int,
     compactCombatLog: Boolean,
+    crtScanlinesEnabled: Boolean,
+    hudVignetteEnabled: Boolean,
+    neonEdgeGlowEnabled: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
+    isDownloadingUpdate: Boolean,
+    updateDownloadProgress: Float,
     updateCheckStatus: String?,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
     onToggleNewDayNotifications: (Boolean) -> Unit,
@@ -657,7 +680,11 @@ private fun ClientSettingsSheetContent(
     onUpdateThemeMode: (AppThemeMode) -> Unit,
     onUpdateNarrativeFontSize: (Int) -> Unit,
     onToggleCompactCombatLog: (Boolean) -> Unit,
+    onToggleCrtScanlines: (Boolean) -> Unit,
+    onToggleHudVignette: (Boolean) -> Unit,
+    onToggleNeonEdgeGlow: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -713,37 +740,67 @@ private fun ClientSettingsSheetContent(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "UPDATE AVAILABLE: ${availableUpdate.latestVersion}",
-                            color = DccColors.Cyan,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.8.sp,
-                        )
-                        Text(
-                            text = "A newer Android APK is live on GitHub Releases.",
-                            color = DccColors.TextPrimary,
-                            fontSize = 12.sp,
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            runCatching {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.releaseUrl))
-                                context.startActivity(intent)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Download", color = DccColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "UPDATE AVAILABLE: ${availableUpdate.latestVersion}",
+                                color = DccColors.Cyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.8.sp,
+                            )
+                            Text(
+                                text = if (!availableUpdate.apkDownloadUrl.isNullOrBlank()) {
+                                    "Tap Install to download and update directly inside the app."
+                                } else {
+                                    "A newer release is live on GitHub Releases."
+                                },
+                                color = DccColors.TextPrimary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Button(
+                            enabled = !isDownloadingUpdate,
+                            onClick = {
+                                if (!availableUpdate.apkDownloadUrl.isNullOrBlank()) {
+                                    onInstallUpdate()
+                                } else {
+                                    runCatching {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.releaseUrl))
+                                        context.startActivity(intent)
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            val btnLbl = when {
+                                isDownloadingUpdate -> "${(updateDownloadProgress * 100).roundToInt()}%"
+                                !availableUpdate.apkDownloadUrl.isNullOrBlank() -> "Install"
+                                else -> "Open"
+                            }
+                            Text(btnLbl, color = DccColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (isDownloadingUpdate) {
+                        LinearProgressIndicator(
+                            progress = { updateDownloadProgress.coerceIn(0f, 1f) },
+                            color = DccColors.Cyan,
+                            trackColor = DccColors.Surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
                     }
                 }
             }
@@ -879,6 +936,111 @@ private fun ClientSettingsSheetContent(
                     Switch(
                         checked = keepScreenAwake,
                         onCheckedChange = onToggleKeepScreenAwake,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+            }
+        }
+
+        // Visual Effects & CRT Monitor Look
+        Surface(
+            color = DccColors.SurfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(14.dp)
+            ) {
+                Text(
+                    text = "VISUAL EFFECTS & CRT MONITOR",
+                    color = DccColors.Gold,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "CRT Scanline Overlay",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Adds subtle retro horizontal broadcast scanlines across the HUD.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = crtScanlinesEnabled,
+                        onCheckedChange = onToggleCrtScanlines,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Monitor Edge Vignette",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Soft darkened corners for a Borant Syndicate terminal frame feel.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = hudVignetteEnabled,
+                        onCheckedChange = onToggleHudVignette,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Syndicate Neon Edge Glow",
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Faint cyan top and crimson bottom ambient screen edge glow.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Switch(
+                        checked = neonEdgeGlowEnabled,
+                        onCheckedChange = onToggleNeonEdgeGlow,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = DccColors.Background,
                             checkedTrackColor = DccColors.Cyan,

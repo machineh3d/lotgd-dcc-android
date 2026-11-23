@@ -40,6 +40,7 @@ import ca.machineh3d.lotgddcc.data.AppThemeMode
 import ca.machineh3d.lotgddcc.notifications.MailNotificationScheduler
 import ca.machineh3d.lotgddcc.ui.GameViewModel
 import ca.machineh3d.lotgddcc.ui.components.CrawlerShieldIcon
+import ca.machineh3d.lotgddcc.ui.components.CrtHudOverlay
 import ca.machineh3d.lotgddcc.ui.screens.GameScreen
 import ca.machineh3d.lotgddcc.ui.screens.LoginScreen
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
@@ -131,8 +132,13 @@ class MainActivity : ComponentActivity() {
                             themeMode = state.themeMode,
                             narrativeFontSizeSp = state.narrativeFontSizeSp,
                             compactCombatLog = state.compactCombatLog,
+                            crtScanlinesEnabled = state.crtScanlinesEnabled,
+                            hudVignetteEnabled = state.hudVignetteEnabled,
+                            neonEdgeGlowEnabled = state.neonEdgeGlowEnabled,
                             availableUpdate = state.availableUpdate,
                             isCheckingUpdate = state.isCheckingUpdate,
+                            isDownloadingUpdate = state.isDownloadingUpdate,
+                            updateDownloadProgress = state.updateDownloadProgress,
                             updateCheckStatus = state.updateCheckStatus,
                             sessionTelemetry = state.sessionTelemetry,
                             onNavigate = { url -> vm.navigate(url) },
@@ -156,12 +162,22 @@ class MainActivity : ComponentActivity() {
                             onUpdateThemeMode = { mode -> vm.updateThemeMode(mode) },
                             onUpdateNarrativeFontSize = { sp -> vm.updateNarrativeFontSize(sp) },
                             onToggleCompactCombatLog = { enabled -> vm.updateCompactCombatLog(enabled) },
+                            onToggleCrtScanlines = { enabled -> vm.updateCrtScanlines(enabled) },
+                            onToggleHudVignette = { enabled -> vm.updateHudVignette(enabled) },
+                            onToggleNeonEdgeGlow = { enabled -> vm.updateNeonEdgeGlow(enabled) },
                             onCheckForUpdates = { vm.checkForUpdates(silent = false) },
+                            onInstallUpdate = { vm.downloadAndInstallUpdate() },
                             onLogout = {
                                 if (state.isInCreateFlow) vm.returnToLogin() else vm.logout()
                             },
                         )
                     }
+
+                    CrtHudOverlay(
+                        scanlinesEnabled = state.crtScanlinesEnabled,
+                        vignetteEnabled = state.hudVignetteEnabled,
+                        neonEdgeGlowEnabled = state.neonEdgeGlowEnabled,
+                    )
 
                     AnimatedVisibility(
                         visible = showSplash,

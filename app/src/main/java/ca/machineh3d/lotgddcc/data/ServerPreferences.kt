@@ -49,6 +49,9 @@ data class ClientPrefsSnapshot(
     val themeMode: AppThemeMode = AppThemeMode.DARK,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
+    val crtScanlinesEnabled: Boolean = false,
+    val hudVignetteEnabled: Boolean = false,
+    val neonEdgeGlowEnabled: Boolean = false,
 )
 
 class ServerPreferences(private val context: Context) {
@@ -77,6 +80,9 @@ class ServerPreferences(private val context: Context) {
         private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         private val KEY_NARRATIVE_FONT_SP = intPreferencesKey("narrative_font_size_sp")
         private val KEY_COMPACT_COMBAT_LOG = booleanPreferencesKey("compact_combat_log")
+        private val KEY_CRT_SCANLINES = booleanPreferencesKey("crt_scanlines_enabled")
+        private val KEY_HUD_VIGNETTE = booleanPreferencesKey("hud_vignette_enabled")
+        private val KEY_NEON_EDGE_GLOW = booleanPreferencesKey("neon_edge_glow_enabled")
         private const val URL_DELIMITER = "\n"
         private const val MAX_RECENT_URLS = 8
     }
@@ -115,6 +121,9 @@ class ServerPreferences(private val context: Context) {
             themeMode = AppThemeMode.fromKey(prefs[KEY_THEME_MODE], legacyLight),
             narrativeFontSizeSp = (prefs[KEY_NARRATIVE_FONT_SP] ?: 15).coerceIn(13, 20),
             compactCombatLog = prefs[KEY_COMPACT_COMBAT_LOG] ?: false,
+            crtScanlinesEnabled = prefs[KEY_CRT_SCANLINES] ?: false,
+            hudVignetteEnabled = prefs[KEY_HUD_VIGNETTE] ?: false,
+            neonEdgeGlowEnabled = prefs[KEY_NEON_EDGE_GLOW] ?: false,
         )
     }
 
@@ -241,6 +250,18 @@ class ServerPreferences(private val context: Context) {
 
     suspend fun saveCompactCombatLog(compact: Boolean) {
         context.dataStore.edit { prefs -> prefs[KEY_COMPACT_COMBAT_LOG] = compact }
+    }
+
+    suspend fun saveCrtScanlinesEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_CRT_SCANLINES] = enabled }
+    }
+
+    suspend fun saveHudVignetteEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_HUD_VIGNETTE] = enabled }
+    }
+
+    suspend fun saveNeonEdgeGlowEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_NEON_EDGE_GLOW] = enabled }
     }
 
     fun normalizeUrl(raw: String): String {

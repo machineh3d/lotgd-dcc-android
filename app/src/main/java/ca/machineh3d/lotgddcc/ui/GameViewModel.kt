@@ -50,8 +50,13 @@ data class GameUiState(
     val themeMode: AppThemeMode = AppThemeMode.DARK,
     val narrativeFontSizeSp: Int = 15,
     val compactCombatLog: Boolean = false,
+    val crtScanlinesEnabled: Boolean = false,
+    val hudVignetteEnabled: Boolean = false,
+    val neonEdgeGlowEnabled: Boolean = false,
     val availableUpdate: AppUpdateInfo? = null,
     val isCheckingUpdate: Boolean = false,
+    val isDownloadingUpdate: Boolean = false,
+    val updateDownloadProgress: Float = 0f,
     val updateCheckStatus: String? = null,
     val sessionTelemetry: SessionTelemetry = SessionTelemetry(),
     val isLoading: Boolean = false,
@@ -109,6 +114,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     themeMode = snap.themeMode,
                     narrativeFontSizeSp = snap.narrativeFontSizeSp,
                     compactCombatLog = snap.compactCombatLog,
+                    crtScanlinesEnabled = snap.crtScanlinesEnabled,
+                    hudVignetteEnabled = snap.hudVignetteEnabled,
+                    neonEdgeGlowEnabled = snap.neonEdgeGlowEnabled,
                 )
             }
             if (snap.mailNotificationsEnabled || snap.pvpNotificationsEnabled) {
@@ -472,6 +480,59 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun updateCompactCombatLog(compact: Boolean) {
         _uiState.update { it.copy(compactCombatLog = compact) }
         viewModelScope.launch { prefs.saveCompactCombatLog(compact) }
+    }
+
+    fun updateCrtScanlines(enabled: Boolean) {
+        _uiState.update { it.copy(crtScanlinesEnabled = enabled) }
+        viewModelScope.launch { prefs.saveCrtScanlinesEnabled(enabled) }
+    }
+
+    fun updateHudVignette(enabled: Boolean) {
+        _uiState.update { it.copy(hudVignetteEnabled = enabled) }
+        viewModelScope.launch { prefs.saveHudVignetteEnabled(enabled) }
+    }
+
+    fun updateNeonEdgeGlow(enabled: Boolean) {
+        _uiState.update { it.copy(neonEdgeGlowEnabled = enabled) }
+        viewModelScope.launch { prefs.saveNeonEdgeGlowEnabled(enabled) }
+    }
+
+    fun downloadAndInstallUpdate() {
+        val update = _uiState.value.availableUpdate ?: return
+        val apkUrl = update.apkDownloadUrl
+        if (apkUrl.isNullOrBlank()) {
+            _uiState.update { it.copy(updateCheckStatus = "No APK asset attached yet — opening GitHub Releases.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingUpdate = true,
+                    updateDownloadProgress = 0f,
+                    updateCheckStatus = "Downloading ${update.latestVersion} APK...",
+                )
+            }
+            try {
+                val apkFile = UpdateChecker.downloadApk(appContext, apkUrl) { progress ->
+                    _uiState.update { it.copy(updateDownloadProgress = progress) }
+                }
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateDownloadProgress = 1f,
+                        updateCheckStatus = "Launching Android installer for ${update.latestVersion}...",
+                    )
+                }
+                UpdateChecker.launchApkInstaller(appContext, apkFile)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateCheckStatus = "Download failed: ${e.message ?: "check connection"}",
+                    )
+                }
+            }
+        }
     }
 
     fun refreshCurrentPage() {
