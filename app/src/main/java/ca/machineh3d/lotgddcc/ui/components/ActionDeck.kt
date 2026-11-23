@@ -245,7 +245,7 @@ fun ActionDeck(
                 it.url.startsWith("forest.php", ignoreCase = true) ||
                     it.url.contains("/forest.php", ignoreCase = true)
             }
-            if (pageType == "village" && corridorsItem != null) {
+            if (corridorsItem != null && (pageType == "village" || allHubItems.size >= 12)) {
                 Row(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
@@ -364,7 +364,7 @@ fun ActionDeck(
                 val primaryItem = when {
                     shouldAutoHeal -> healerItem
                     searchFightItem != null -> searchFightItem
-                    else -> allItems.firstOrNull { it != returnItem }
+                    else -> null
                 }
                 val isAutoHealButton = shouldAutoHeal && primaryItem == healerItem
 
@@ -448,7 +448,7 @@ fun ActionDeck(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = "All (${allItems.size})",
+                            text = if (primaryItem == null) "All Options (${allItems.size})" else "All (${allItems.size})",
                             color = DccColors.Cyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -682,6 +682,89 @@ private fun partitionHubGroups(
         HubSheetTab.MENU -> {
             val remaining = navGroups.filter { !isShopGroup(it) && !isSafeRoomGroup(it) }
             "Broadcast & Menu" to (if (remaining.isNotEmpty()) remaining else navGroups)
+        }
+    }
+}
+
+/**
+ * Renders all choices directly inline below the narrative on multi-option selection screens
+ * (starting class/specialty, race selection, random encounters, room menus) so players
+ * immediately see every option instead of only one arbitrary button in the bottom bar.
+ */
+@Composable
+fun InlineChoiceDeck(
+    pageType: String,
+    badnav: Boolean,
+    navGroups: List<NavGroup>,
+    enabled: Boolean,
+    onNavigate: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (badnav || pageType == "combat") return
+    val allItems = remember(navGroups) { navGroups.flatMap { it.items } }
+    if (allItems.size !in 3..12) return
+
+    val hasCorridorsHub = allItems.any {
+        it.url.startsWith("forest.php", ignoreCase = true) ||
+            it.url.contains("/forest.php", ignoreCase = true)
+    }
+    if (hasCorridorsHub && (pageType == "village" || allItems.size >= 12)) return
+    if (allItems.any { isHuntSearchLink(it) }) return
+
+    val choiceItems = allItems.filterNot { isReturnLink(it) }
+    if (choiceItems.size < 2) return
+
+    Surface(
+        color = DccColors.Surface,
+        border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Text(
+                text = "CHOOSE AN OPTION (${choiceItems.size})",
+                color = DccColors.Cyan,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.1.sp,
+            )
+
+            for (item in choiceItems) {
+                Surface(
+                    color = DccColors.SurfaceVariant,
+                    border = BorderStroke(1.dp, DccColors.Outline),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = enabled) { onNavigate(item.url) }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = cleanNavLabel(item.label),
+                            color = DccColors.TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Filled.ChevronRight,
+                            contentDescription = null,
+                            tint = DccColors.Cyan,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

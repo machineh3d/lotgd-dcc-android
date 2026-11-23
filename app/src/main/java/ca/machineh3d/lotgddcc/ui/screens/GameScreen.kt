@@ -75,6 +75,7 @@ import ca.machineh3d.lotgddcc.model.DccPageResponse
 import ca.machineh3d.lotgddcc.model.GameForm
 import ca.machineh3d.lotgddcc.ui.SessionTelemetry
 import ca.machineh3d.lotgddcc.ui.components.ActionDeck
+import ca.machineh3d.lotgddcc.ui.components.InlineChoiceDeck
 import ca.machineh3d.lotgddcc.ui.components.BattleHudCard
 import ca.machineh3d.lotgddcc.ui.components.CasinoVisualPanel
 import ca.machineh3d.lotgddcc.ui.components.NarrativeView
@@ -581,6 +582,14 @@ fun GameScreen(
                             onSubmit = { values -> onSubmitForm(form, values) },
                         )
                     }
+
+                    InlineChoiceDeck(
+                        pageType = page.pageType,
+                        badnav = page.badnav,
+                        navGroups = page.navGroups,
+                        enabled = !isLoading,
+                        onNavigate = onNavigate,
+                    )
 
                     Spacer(Modifier.height(16.dp))
                 }
