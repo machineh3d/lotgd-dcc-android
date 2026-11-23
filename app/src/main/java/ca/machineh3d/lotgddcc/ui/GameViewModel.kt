@@ -59,6 +59,8 @@ data class GameUiState(
     val updateDownloadProgress: Float = 0f,
     val updateCheckStatus: String? = null,
     val sessionTelemetry: SessionTelemetry = SessionTelemetry(),
+    val friendsOnlineCount: Int = 0,
+    val friendsPendingCount: Int = 0,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val canRetry: Boolean = false,
@@ -82,6 +84,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var lastFailedUrl: String? = null
     private var lastFailedForm: Pair<GameForm, Map<String, String>>? = null
     private var pendingOpenMailOnResume: Boolean = false
+    private var pendingOpenFriendsAfterHub: Boolean = false
 
     private var prevGold: Int? = null
     private var prevXp: Int? = null
@@ -261,6 +264,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     syncNewDayAlarm(resp)
                     syncMailAndPvpNotifications(resp)
                     updateSessionTelemetry(resp)
+                    syncFriendsCountsFromPage(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     _uiState.update { it.copy(isLoading = false, page = null) }
@@ -311,6 +315,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     syncNewDayAlarm(resp)
                     syncMailAndPvpNotifications(resp)
                     updateSessionTelemetry(resp)
+                    syncFriendsCountsFromPage(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
                     val serverHint = resp.paragraphs
@@ -572,6 +577,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     syncNewDayAlarm(resp)
                     syncMailAndPvpNotifications(resp)
                     updateSessionTelemetry(resp)
+                    syncFriendsCountsFromPage(resp)
+                }
+                if (pendingOpenFriendsAfterHub && !loggedOut) {
+                    pendingOpenFriendsAfterHub = false
+                    val friendsUrl = resp.navGroups.flatMap { it.items }
+                        .firstOrNull { it.url.contains("dccfriends", ignoreCase = true) }?.url
+                    if (!friendsUrl.isNullOrBlank()) {
+                        _uiState.update { it.copy(isLoading = false, page = resp) }
+                        navigate(friendsUrl)
+                        return@launch
+                    }
                 }
                 _uiState.update {
                     it.copy(
@@ -619,6 +635,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 syncNewDayAlarm(resp)
                 syncMailAndPvpNotifications(resp)
                 updateSessionTelemetry(resp)
+                syncFriendsCountsFromPage(resp)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -650,6 +667,102 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             else -> cur?.recoveryUrl?.takeIf { it.isNotBlank() } ?: "badnav.php"
         }
         navigate(target)
+    }
+
+
+    private val friendsStatsRegex = Regex("""(\d+)\s*/\s*(\d+)(?:\s*\((\d+)\s*req\))?""", RegexOption.IGNORE_CASE)
+    private val friendsNavRegex = Regex("""\((\d+)\s*online(?:\s*·\s*(\d+)\s*req!?)?\)""", RegexOption.IGNORE_CASE)
+
+    private fun syncFriendsCountsFromPage(resp: DccPageResponse) {
+        var online: Int? = null
+        var pending: Int? = null
+
+        // 1. Check charStats ("Friends Online: X / Y (N req)")
+        for (sec in resp.charStats) {
+            for (item in sec.items) {
+                if (item.label.contains("friends online", ignoreCase = true)) {
+                    val m = friendsStatsRegex.find(item.value)
+                    if (m != null) {
+                        online = m.groupValues[1].toIntOrNull()
+                        pending = m.groupValues[3].toIntOrNull() ?: 0
+                    }
+                }
+            }
+        }
+
+        // 2. Also check nav item ("Squad & Friends (X online · N req!)")
+        if (online == null) {
+            val navItem = resp.navGroups.flatMap { it.items }
+                .firstOrNull { it.url.contains("dccfriends", ignoreCase = true) }
+            if (navItem != null) {
+                val m = friendsNavRegex.find(navItem.label)
+                if (m != null) {
+                    online = m.groupValues[1].toIntOrNull()
+                    pending = m.groupValues[2].toIntOrNull() ?: 0
+                }
+            }
+        }
+
+        if (online != null) {
+            _uiState.update {
+                it.copy(
+                    friendsOnlineCount = online,
+                    friendsPendingCount = pending ?: it.friendsPendingCount,
+                )
+            }
+        }
+    }
+
+    fun pollFriendsStatus() {
+        val st = _uiState.value
+        if (st.serverUrl.isBlank() || st.page?.player?.loggedIn != true) return
+        viewModelScope.launch {
+            val snap = api.fetchFriendsPoll(st.serverUrl) ?: return@launch
+            _uiState.update {
+                it.copy(
+                    friendsOnlineCount = snap.online,
+                    friendsPendingCount = snap.pending,
+                )
+            }
+        }
+    }
+
+    fun openFriendsList(): String? {
+        val page = _uiState.value.page ?: return null
+        val allNavs = page.navGroups.flatMap { it.items }
+
+        // 1. Direct link available in current room (Safe Room or inside dccfriends)
+        val directFriends = allNavs.firstOrNull {
+            it.url.contains("dccfriends", ignoreCase = true) && !it.url.contains("op=add", ignoreCase = true)
+        }
+        if (directFriends != null) {
+            pendingOpenFriendsAfterHub = false
+            navigate(directFriends.url)
+            return null
+        }
+
+        // 2. If already on dccfriends, refresh it
+        if (page.currentUrl.contains("dccfriends", ignoreCase = true)) {
+            refreshCurrentPage()
+            return null
+        }
+
+        // 3. Don't interrupt active combat (would trigger badnav)
+        if (page.pageType == "combat") {
+            return "Finish combat first to open Squad & Friends."
+        }
+
+        // 4. Smart 2-step jump via Safe Room so we never hit badnav
+        val hubLink = allNavs.firstOrNull {
+            it.url.contains("village.php", ignoreCase = true)
+        }
+        if (hubLink != null) {
+            pendingOpenFriendsAfterHub = true
+            navigate(hubLink.url)
+            return null
+        }
+
+        return "Return to the Safe Room to open Squad & Friends."
     }
 
     fun openSyndicateComms() {

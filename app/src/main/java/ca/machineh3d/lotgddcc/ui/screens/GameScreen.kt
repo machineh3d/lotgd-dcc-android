@@ -124,12 +124,16 @@ fun GameScreen(
     updateDownloadProgress: Float,
     updateCheckStatus: String?,
     sessionTelemetry: SessionTelemetry,
+    friendsOnlineCount: Int,
+    friendsPendingCount: Int,
     onNavigate: (String) -> Unit,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onSubmitForm: (GameForm, Map<String, String>) -> Unit,
     onRecoverBadNav: () -> Unit,
     onOpenComms: () -> Unit,
+    onOpenFriends: () -> String?,
+    onPollFriends: () -> Unit,
     onToggleStatsSheet: (Boolean) -> Unit,
     onToggleSettingsSheet: (Boolean) -> Unit,
     onUpdateAutoHeal: (Boolean, Int) -> Unit,
@@ -337,9 +341,17 @@ fun GameScreen(
                         title = page.title,
                         player = page.player,
                         mail = page.mail,
+                        friendsOnline = friendsOnlineCount,
+                        friendsPending = friendsPendingCount,
                         pulseTrainIndicator = pulseTrainIndicator,
                         onOpenStats = { onToggleStatsSheet(true) },
                         onOpenComms = onOpenComms,
+                        onOpenFriends = {
+                            val hint = onOpenFriends()
+                            if (!hint.isNullOrBlank()) {
+                                Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onOpenSettings = { onToggleSettingsSheet(true) },
                         onTapHpBar = {
                             val player = page.player
@@ -1512,6 +1524,8 @@ private fun CrawlerStatsSheetContent(
     sections: List<CharStatSection>,
     secondsPerGameDay: Int,
     sessionTelemetry: SessionTelemetry,
+    friendsOnlineCount: Int,
+    friendsPendingCount: Int,
     modifier: Modifier = Modifier,
 ) {
     var elapsedSec by remember(sections) { mutableIntStateOf(0) }

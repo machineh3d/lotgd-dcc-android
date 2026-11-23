@@ -5,6 +5,9 @@ import ca.machineh3d.lotgddcc.model.DccPageResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -60,6 +63,13 @@ private class PersistentCookieJar(context: Context) : CookieJar {
     }
 }
 
+
+data class FriendsStatusSnapshot(
+    val online: Int = 0,
+    val total: Int = 0,
+    val pending: Int = 0,
+)
+
 class DccApiClient(context: Context) {
 
     private val cookieJar = PersistentCookieJar(context.applicationContext)
@@ -85,6 +95,37 @@ class DccApiClient(context: Context) {
             chain.proceed(req)
         }
         .build()
+
+
+    /**
+     * Read-only live poll for dcc_friends_poll.php (never touches allowednavs/badnav).
+     */
+    suspend fun fetchFriendsPoll(baseUrl: String): FriendsStatusSnapshot? = withContext(Dispatchers.IO) {
+        runCatching {
+            val resolved = resolveUrl(baseUrl, "dcc_friends_poll.php")
+            val request = Request.Builder().url(resolved).get().build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                val body = response.body?.string()?.trim().orEmpty()
+                if (!body.startsWith("{")) return@runCatching null
+                val obj = json.parseToJsonElement(body).jsonObject
+                if (obj["ok"]?.jsonPrimitive?.content == "false") return@runCatching null
+                val online = obj["online"]?.jsonPrimitive?.intOrNull
+                    ?: obj["onlineCount"]?.jsonPrimitive?.intOrNull
+                    ?: obj["online_count"]?.jsonPrimitive?.intOrNull
+                    ?: 0
+                val total = obj["total"]?.jsonPrimitive?.intOrNull
+                    ?: obj["totalCount"]?.jsonPrimitive?.intOrNull
+                    ?: obj["total_count"]?.jsonPrimitive?.intOrNull
+                    ?: 0
+                val pending = obj["pending"]?.jsonPrimitive?.intOrNull
+                    ?: obj["pendingCount"]?.jsonPrimitive?.intOrNull
+                    ?: obj["requests"]?.jsonPrimitive?.intOrNull
+                    ?: 0
+                FriendsStatusSnapshot(online = online, total = total, pending = pending)
+            }
+        }.getOrNull()
+    }
 
     fun clearSession() {
         cookieJar.clearAll()

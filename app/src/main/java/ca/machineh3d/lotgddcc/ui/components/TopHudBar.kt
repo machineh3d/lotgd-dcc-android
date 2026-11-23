@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
@@ -55,9 +56,12 @@ fun TopHudBar(
     title: String,
     player: PlayerState?,
     mail: MailState,
+    friendsOnline: Int,
+    friendsPending: Int,
     pulseTrainIndicator: Boolean,
     onOpenStats: () -> Unit,
     onOpenComms: () -> Unit,
+    onOpenFriends: () -> Unit,
     onOpenSettings: () -> Unit,
     onTapHpBar: () -> Unit,
     onTapXpBar: () -> Unit,
@@ -127,7 +131,37 @@ fun TopHudBar(
                 }
 
                 if (player != null) {
-                    IconButton(onClick = onOpenComms, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onOpenFriends, modifier = Modifier.size(32.dp)) {
+                        BadgedBox(
+                            badge = {
+                                if (friendsOnline > 0 || friendsPending > 0) {
+                                    Badge(
+                                        containerColor = if (friendsPending > 0) DccColors.Gold else DccColors.Emerald
+                                    ) {
+                                        Text(
+                                            text = if (friendsOnline > 0) "$friendsOnline" else "!",
+                                            color = DccColors.Background,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Group,
+                                contentDescription = "Squad & Friends ($friendsOnline online)",
+                                tint = when {
+                                    friendsPending > 0 -> DccColors.Gold
+                                    friendsOnline > 0 -> DccColors.Emerald
+                                    else -> DccColors.TextSecondary
+                                },
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = onOpenComms, modifier = Modifier.size(32.dp)) {
                         BadgedBox(
                             badge = {
                                 if (mail.unread > 0) {
@@ -146,7 +180,7 @@ fun TopHudBar(
                         }
                     }
 
-                    IconButton(onClick = onOpenStats, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onOpenStats, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Person,
                             contentDescription = "Crawler Stats",
@@ -155,7 +189,7 @@ fun TopHudBar(
                         )
                     }
 
-                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(34.dp)) {
+                    IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Settings,
                             contentDescription = "Client Settings",
@@ -165,7 +199,7 @@ fun TopHudBar(
                     }
                 }
 
-                IconButton(onClick = onLogout, modifier = Modifier.size(34.dp)) {
+                IconButton(onClick = onLogout, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Logout,
                         contentDescription = "Log Out",
