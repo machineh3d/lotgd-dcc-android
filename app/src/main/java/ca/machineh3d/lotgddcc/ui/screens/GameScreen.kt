@@ -118,6 +118,7 @@ fun GameScreen(
     crtScanlinesEnabled: Boolean,
     hudVignetteEnabled: Boolean,
     neonEdgeGlowEnabled: Boolean,
+    autoCheckUpdatesEnabled: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
     isDownloadingUpdate: Boolean,
@@ -152,6 +153,7 @@ fun GameScreen(
     onToggleCrtScanlines: (Boolean) -> Unit,
     onToggleHudVignette: (Boolean) -> Unit,
     onToggleNeonEdgeGlow: (Boolean) -> Unit,
+    onToggleAutoCheckUpdates: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onInstallUpdate: () -> Unit,
     onLogout: () -> Unit,
@@ -343,7 +345,20 @@ fun GameScreen(
                         mail = page.mail,
                         friendsOnline = friendsOnlineCount,
                         friendsPending = friendsPendingCount,
-                        nextNewDaySeconds = page.nextNewDaySeconds,
+                        nextNewDaySeconds = remember(page.charStats, page.nextNewDaySeconds) {
+                            val fromStats = page.charStats
+                                .flatMap { it.items }
+                                .firstOrNull { it.label.contains("next cycle", ignoreCase = true) }
+                                ?.value
+                                ?.let { v ->
+                                    HMS_REGEX.find(v)?.let { m ->
+                                        m.groupValues[1].toInt() * 3600 +
+                                            m.groupValues[2].toInt() * 60 +
+                                            m.groupValues[3].toInt()
+                                    }
+                                }
+                            fromStats ?: page.nextNewDaySeconds
+                        },
                         secondsPerGameDay = page.secondsPerGameDay,
                         pulseTrainIndicator = pulseTrainIndicator,
                         onOpenStats = { onToggleStatsSheet(true) },
@@ -624,6 +639,7 @@ fun GameScreen(
                 crtScanlinesEnabled = crtScanlinesEnabled,
                 hudVignetteEnabled = hudVignetteEnabled,
                 neonEdgeGlowEnabled = neonEdgeGlowEnabled,
+                autoCheckUpdatesEnabled = autoCheckUpdatesEnabled,
                 availableUpdate = availableUpdate,
                 isCheckingUpdate = isCheckingUpdate,
                 isDownloadingUpdate = isDownloadingUpdate,
@@ -645,6 +661,7 @@ fun GameScreen(
                 onToggleCrtScanlines = onToggleCrtScanlines,
                 onToggleHudVignette = onToggleHudVignette,
                 onToggleNeonEdgeGlow = onToggleNeonEdgeGlow,
+                onToggleAutoCheckUpdates = onToggleAutoCheckUpdates,
                 onCheckForUpdates = onCheckForUpdates,
                 onInstallUpdate = onInstallUpdate,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -676,6 +693,7 @@ private fun ClientSettingsSheetContent(
     crtScanlinesEnabled: Boolean,
     hudVignetteEnabled: Boolean,
     neonEdgeGlowEnabled: Boolean,
+    autoCheckUpdatesEnabled: Boolean,
     availableUpdate: AppUpdateInfo?,
     isCheckingUpdate: Boolean,
     isDownloadingUpdate: Boolean,
@@ -697,6 +715,7 @@ private fun ClientSettingsSheetContent(
     onToggleCrtScanlines: (Boolean) -> Unit,
     onToggleHudVignette: (Boolean) -> Unit,
     onToggleNeonEdgeGlow: (Boolean) -> Unit,
+    onToggleAutoCheckUpdates: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onInstallUpdate: () -> Unit,
     modifier: Modifier = Modifier,
@@ -781,28 +800,37 @@ private fun ClientSettingsSheetContent(
                                 fontSize = 12.sp,
                             )
                         }
-                        Button(
-                            enabled = !isDownloadingUpdate,
-                            onClick = {
-                                if (!availableUpdate.apkDownloadUrl.isNullOrBlank()) {
-                                    onInstallUpdate()
-                                } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                enabled = !isDownloadingUpdate,
+                                onClick = {
                                     runCatching {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.releaseUrl))
-                                        context.startActivity(intent)
+                                        val link = availableUpdate.apkDownloadUrl ?: availableUpdate.releaseUrl
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
                                     }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            val btnLbl = when {
-                                isDownloadingUpdate -> "${(updateDownloadProgress * 100).roundToInt()}%"
-                                !availableUpdate.apkDownloadUrl.isNullOrBlank() -> "Install"
-                                else -> "Open"
+                                },
+                                border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                Text("Link", color = DccColors.Cyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
-                            Text(btnLbl, color = DccColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            if (!availableUpdate.apkDownloadUrl.isNullOrBlank()) {
+                                Button(
+                                    enabled = !isDownloadingUpdate,
+                                    onClick = onInstallUpdate,
+                                    colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                ) {
+                                    val btnLbl = if (isDownloadingUpdate) {
+                                        "${(updateDownloadProgress * 100).roundToInt()}%"
+                                    } else {
+                                        "Install"
+                                    }
+                                    Text(btnLbl, color = DccColors.Background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                     if (isDownloadingUpdate) {
@@ -1481,6 +1509,33 @@ private fun ClientSettingsSheetContent(
                         fontWeight = FontWeight.Medium,
                     )
                 }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Auto-Check Updates on Launch",
+                            color = DccColors.TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "Checks GitHub on the Login screen so you can update before signing in.",
+                            color = DccColors.TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Switch(
+                        checked = autoCheckUpdatesEnabled,
+                        onCheckedChange = onToggleAutoCheckUpdates,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = DccColors.Background,
+                            checkedTrackColor = DccColors.Cyan,
+                        )
+                    )
+                }
+                HorizontalDivider(color = DccColors.Outline.copy(alpha = 0.5f))
                 AboutRow("App", "Dungeon Crawler World (lotgd-dcc)")
                 AboutRow("Version", "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})")
                 AboutRow("Server", serverUrl.ifBlank { "Not connected" })

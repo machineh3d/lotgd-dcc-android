@@ -425,6 +425,7 @@ private fun resolveFriendlyLabel(field: FormField, isRegistrationForm: Boolean):
             else -> field.label.ifBlank { field.name }
         }
     }
+    if (field.name.equals("insertcommentary", ignoreCase = true)) return "Say something..."
     return field.label.ifBlank { field.name }
 }
 

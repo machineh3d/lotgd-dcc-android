@@ -53,6 +53,7 @@ data class GameUiState(
     val crtScanlinesEnabled: Boolean = false,
     val hudVignetteEnabled: Boolean = false,
     val neonEdgeGlowEnabled: Boolean = false,
+    val autoCheckUpdatesEnabled: Boolean = true,
     val availableUpdate: AppUpdateInfo? = null,
     val isCheckingUpdate: Boolean = false,
     val isDownloadingUpdate: Boolean = false,
@@ -120,6 +121,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     crtScanlinesEnabled = snap.crtScanlinesEnabled,
                     hudVignetteEnabled = snap.hudVignetteEnabled,
                     neonEdgeGlowEnabled = snap.neonEdgeGlowEnabled,
+                    autoCheckUpdatesEnabled = snap.autoCheckUpdatesEnabled,
                 )
             }
             if (snap.mailNotificationsEnabled || snap.pvpNotificationsEnabled) {
@@ -128,7 +130,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             if (snap.lastServerUrl.isNotBlank()) {
                 resumeSession(snap.lastServerUrl)
             }
-            checkForUpdates(silent = true)
+            if (snap.autoCheckUpdatesEnabled) {
+                checkForUpdates(silent = true)
+            }
         }
     }
 
@@ -500,6 +504,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun updateNeonEdgeGlow(enabled: Boolean) {
         _uiState.update { it.copy(neonEdgeGlowEnabled = enabled) }
         viewModelScope.launch { prefs.saveNeonEdgeGlowEnabled(enabled) }
+    }
+
+    fun updateAutoCheckUpdates(enabled: Boolean) {
+        _uiState.update { it.copy(autoCheckUpdatesEnabled = enabled) }
+        viewModelScope.launch { prefs.saveAutoCheckUpdatesEnabled(enabled) }
+        if (enabled && _uiState.value.availableUpdate == null) {
+            checkForUpdates(silent = true)
+        }
     }
 
     fun downloadAndInstallUpdate() {

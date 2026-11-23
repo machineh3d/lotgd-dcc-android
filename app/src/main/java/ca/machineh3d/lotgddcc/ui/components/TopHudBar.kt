@@ -394,7 +394,14 @@ fun TopHudBar(
                     }
 
                     val cycleLen = if (secondsPerGameDay > 0) secondsPerGameDay else 21600
-                    val liveRem = (nextNewDaySeconds - elapsedSec).let {
+                    // Guard against servers/bridges returning a raw Unix timestamp instead of remaining seconds
+                    val clampedInitial = if (nextNewDaySeconds > cycleLen) {
+                        val mod = nextNewDaySeconds % cycleLen
+                        if (mod == 0) cycleLen else mod
+                    } else {
+                        nextNewDaySeconds
+                    }
+                    val liveRem = (clampedInitial - elapsedSec).let {
                         if (it < 0) (cycleLen + (it % cycleLen)) % cycleLen else it
                     }
                     val dayProgress = ((cycleLen - liveRem).toFloat() / cycleLen.toFloat()).coerceIn(0f, 1f)

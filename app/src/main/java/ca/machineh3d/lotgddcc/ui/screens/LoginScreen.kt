@@ -7,7 +7,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import ca.machineh3d.lotgddcc.data.AppUpdateInfo
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,7 +34,6 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,6 +72,13 @@ fun LoginScreen(
     initialPassword: String,
     isLoading: Boolean,
     errorMessage: String?,
+    availableUpdate: AppUpdateInfo?,
+    isCheckingUpdate: Boolean,
+    isDownloadingUpdate: Boolean,
+    updateDownloadProgress: Float,
+    updateCheckStatus: String?,
+    onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
     onLogin: (serverUrl: String, username: String, password: String, rememberCredentials: Boolean) -> Unit,
     onOpenRegistration: (serverUrl: String) -> Unit,
     onRemoveRecentUrl: (String) -> Unit,
@@ -308,13 +323,108 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
+
+            if (availableUpdate != null) {
+                Surface(
+                    color = DccColors.Cyan.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.6f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "UPDATE AVAILABLE: ${availableUpdate.latestVersion}",
+                                    color = DccColors.Cyan,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 0.8.sp,
+                                )
+                                Text(
+                                    text = "Update directly or open the GitHub link.",
+                                    color = DccColors.TextPrimary,
+                                    fontSize = 11.5.sp,
+                                )
+                            }
+                            OutlinedButton(
+                                enabled = !isDownloadingUpdate,
+                                onClick = {
+                                    runCatching {
+                                        val link = availableUpdate.apkDownloadUrl ?: availableUpdate.releaseUrl
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
+                                    }
+                                },
+                                border = BorderStroke(1.dp, DccColors.Cyan.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp),
+                            ) {
+                                Text("Link", color = DccColors.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (!availableUpdate.apkDownloadUrl.isNullOrBlank()) {
+                                Button(
+                                    enabled = !isDownloadingUpdate,
+                                    onClick = onInstallUpdate,
+                                    colors = ButtonDefaults.buttonColors(containerColor = DccColors.Cyan),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                                ) {
+                                    val lbl = if (isDownloadingUpdate) {
+                                        "${(updateDownloadProgress * 100).roundToInt()}%"
+                                    } else {
+                                        "Install"
+                                    }
+                                    Text(lbl, color = DccColors.Background, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        if (isDownloadingUpdate) {
+                            LinearProgressIndicator(
+                                progress = { updateDownloadProgress.coerceIn(0f, 1f) },
+                                color = DccColors.Cyan,
+                                trackColor = DccColors.Surface,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
 
             Text(
                 text = "App Version v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                 color = DccColors.TextSecondary.copy(alpha = 0.75f),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = when {
+                    isCheckingUpdate -> "Checking GitHub Releases..."
+                    !updateCheckStatus.isNullOrBlank() -> updateCheckStatus
+                    else -> "Check for Updates"
+                },
+                color = DccColors.Cyan.copy(alpha = 0.85f),
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(enabled = !isCheckingUpdate) { onCheckForUpdates() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
     }

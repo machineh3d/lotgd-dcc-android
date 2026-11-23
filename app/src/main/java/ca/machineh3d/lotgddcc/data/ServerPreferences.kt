@@ -52,6 +52,7 @@ data class ClientPrefsSnapshot(
     val crtScanlinesEnabled: Boolean = false,
     val hudVignetteEnabled: Boolean = false,
     val neonEdgeGlowEnabled: Boolean = false,
+    val autoCheckUpdatesEnabled: Boolean = true,
 )
 
 class ServerPreferences(private val context: Context) {
@@ -83,6 +84,7 @@ class ServerPreferences(private val context: Context) {
         private val KEY_CRT_SCANLINES = booleanPreferencesKey("crt_scanlines_enabled")
         private val KEY_HUD_VIGNETTE = booleanPreferencesKey("hud_vignette_enabled")
         private val KEY_NEON_EDGE_GLOW = booleanPreferencesKey("neon_edge_glow_enabled")
+        private val KEY_AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates_enabled")
         private const val URL_DELIMITER = "\n"
         private const val MAX_RECENT_URLS = 8
     }
@@ -124,6 +126,7 @@ class ServerPreferences(private val context: Context) {
             crtScanlinesEnabled = prefs[KEY_CRT_SCANLINES] ?: false,
             hudVignetteEnabled = prefs[KEY_HUD_VIGNETTE] ?: false,
             neonEdgeGlowEnabled = prefs[KEY_NEON_EDGE_GLOW] ?: false,
+            autoCheckUpdatesEnabled = prefs[KEY_AUTO_CHECK_UPDATES] ?: true,
         )
     }
 
@@ -262,6 +265,10 @@ class ServerPreferences(private val context: Context) {
 
     suspend fun saveNeonEdgeGlowEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs -> prefs[KEY_NEON_EDGE_GLOW] = enabled }
+    }
+
+    suspend fun saveAutoCheckUpdatesEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[KEY_AUTO_CHECK_UPDATES] = enabled }
     }
 
     fun normalizeUrl(raw: String): String {
