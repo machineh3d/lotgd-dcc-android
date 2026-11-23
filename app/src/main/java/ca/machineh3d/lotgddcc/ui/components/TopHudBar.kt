@@ -220,6 +220,69 @@ fun TopHudBar(
             // Row 2: Tap-to-act HP bar + XP-to-Trainer bar + Stamina / Gold / Tokens
             if (player != null) {
                 Spacer(Modifier.height(6.dp))
+                // Slim live-ticking Time-to-Next-Day progress bar
+                if (nextNewDaySeconds > 0) {
+                    var elapsedSec by remember(nextNewDaySeconds) { mutableIntStateOf(0) }
+                    LaunchedEffect(nextNewDaySeconds) {
+                        elapsedSec = 0
+                        while (true) {
+                            delay(1000L)
+                            elapsedSec += 1
+                        }
+                    }
+
+                    val cycleLen = if (secondsPerGameDay > 0) secondsPerGameDay else 21600
+                    // Guard against servers/bridges returning a raw Unix timestamp instead of remaining seconds
+                    val clampedInitial = if (nextNewDaySeconds > cycleLen) {
+                        val mod = nextNewDaySeconds % cycleLen
+                        if (mod == 0) cycleLen else mod
+                    } else {
+                        nextNewDaySeconds
+                    }
+                    val liveRem = (clampedInitial - elapsedSec).let {
+                        if (it < 0) (cycleLen + (it % cycleLen)) % cycleLen else it
+                    }
+                    val dayProgress = ((cycleLen - liveRem).toFloat() / cycleLen.toFloat()).coerceIn(0f, 1f)
+                    val soon = liveRem <= 900 // final 15 minutes
+                    val dayAccent = if (soon) DccColors.Gold else DccColors.Cyan
+                    val hrs = liveRem / 3600
+                    val mins = (liveRem % 3600) / 60
+                    val secs = liveRem % 60
+                    val countdownText = String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable(onClick = onOpenStats)
+                    ) {
+                        Text(
+                            text = "DAY",
+                            color = dayAccent,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
+                        )
+                        LinearProgressIndicator(
+                            progress = { dayProgress },
+                            color = dayAccent,
+                            trackColor = DccColors.SurfaceVariant,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                        )
+                        Text(
+                            text = countdownText,
+                            color = if (soon) DccColors.Gold else DccColors.TextSecondary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                    Spacer(Modifier.height(6.dp))
                 val hpFraction = (player.hp.toFloat() / player.maxHp.coerceAtLeast(1).toFloat())
                     .coerceIn(0f, 1f)
                 val hpColor = when {
@@ -380,70 +443,6 @@ fun TopHudBar(
                         tint = DccColors.Violet,
                         contentDescription = "Sponsor Tokens"
                     )
-                }
-
-                // Slim live-ticking Time-to-Next-Day progress bar
-                if (nextNewDaySeconds > 0) {
-                    var elapsedSec by remember(nextNewDaySeconds) { mutableIntStateOf(0) }
-                    LaunchedEffect(nextNewDaySeconds) {
-                        elapsedSec = 0
-                        while (true) {
-                            delay(1000L)
-                            elapsedSec += 1
-                        }
-                    }
-
-                    val cycleLen = if (secondsPerGameDay > 0) secondsPerGameDay else 21600
-                    // Guard against servers/bridges returning a raw Unix timestamp instead of remaining seconds
-                    val clampedInitial = if (nextNewDaySeconds > cycleLen) {
-                        val mod = nextNewDaySeconds % cycleLen
-                        if (mod == 0) cycleLen else mod
-                    } else {
-                        nextNewDaySeconds
-                    }
-                    val liveRem = (clampedInitial - elapsedSec).let {
-                        if (it < 0) (cycleLen + (it % cycleLen)) % cycleLen else it
-                    }
-                    val dayProgress = ((cycleLen - liveRem).toFloat() / cycleLen.toFloat()).coerceIn(0f, 1f)
-                    val soon = liveRem <= 900 // final 15 minutes
-                    val dayAccent = if (soon) DccColors.Gold else DccColors.Cyan
-                    val hrs = liveRem / 3600
-                    val mins = (liveRem % 3600) / 60
-                    val secs = liveRem % 60
-                    val countdownText = String.format(Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
-
-                    Spacer(Modifier.height(5.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable(onClick = onOpenStats)
-                    ) {
-                        Text(
-                            text = "DAY",
-                            color = dayAccent,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.6.sp,
-                        )
-                        LinearProgressIndicator(
-                            progress = { dayProgress },
-                            color = dayAccent,
-                            trackColor = DccColors.SurfaceVariant,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                        )
-                        Text(
-                            text = countdownText,
-                            color = if (soon) DccColors.Gold else DccColors.TextSecondary,
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
                 }
             }
         }
