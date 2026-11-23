@@ -13,17 +13,36 @@ android {
         applicationId = "ca.machineh3d.lotgddcc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.13.2-alpha"
+        versionCode = 22
+        versionName = "0.13.3-alpha"
 
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
+    val ksPath = System.getenv("DCC_KEYSTORE_PATH")
+    val hasReleaseKeystore = !ksPath.isNullOrBlank() && file(ksPath).exists()
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(ksPath!!)
+                storePassword = System.getenv("DCC_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("DCC_KEY_ALIAS") ?: "lotgd-dcc"
+                keyPassword = System.getenv("DCC_KEY_PASSWORD") ?: ""
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

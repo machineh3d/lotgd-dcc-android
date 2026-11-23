@@ -11,3 +11,5 @@
 dist/
 *.apk
 *.aab
+*.jks
+*.keystore
