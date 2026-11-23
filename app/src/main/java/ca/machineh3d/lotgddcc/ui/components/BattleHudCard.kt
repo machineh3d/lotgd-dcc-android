@@ -109,13 +109,19 @@ private val DMG_TAKEN_REGEX = Regex(
  * Filters out redundant plain-text paragraphs emitted by the server-side web `battlehud.php`
  * module when the native Compose Battle HUD is active, without touching LotGD narrative lines.
  */
+private val WEB_HUD_STAT_LINE_REGEX = Regex("""Lv\s*\d+\s*/\s*\d+\s*HP""", RegexOption.IGNORE_CASE)
+
 fun filterRedundantWebBattleHudParagraphs(paragraphs: List<List<TextSpan>>): List<List<TextSpan>> {
     return paragraphs.filterNot { line ->
         val plain = line.joinToString("") { it.text }.trim()
         plain.startsWith("TACTICAL COMBAT HUD", ignoreCase = true) ||
             plain.startsWith("SYNDICATE COMBAT TELEMETRY", ignoreCase = true) ||
+            plain.contains("LIVE CORRIDOR COMBAT TELEMETRY", ignoreCase = true) ||
             plain.equals("HOSTILE ELIMINATED", ignoreCase = true) ||
-            plain.equals("CRITICAL BIOMETRIC FAILURE", ignoreCase = true)
+            plain.equals("CRITICAL BIOMETRIC FAILURE", ignoreCase = true) ||
+            plain.startsWith("Equipped:", ignoreCase = true) ||
+            plain.startsWith("Weapon:", ignoreCase = true) ||
+            WEB_HUD_STAT_LINE_REGEX.containsMatchIn(plain)
     }
 }
 
@@ -414,7 +420,9 @@ private fun CombatantColumn(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
         ) {
             icon()
             Column(modifier = Modifier.weight(1f)) {
@@ -459,7 +467,9 @@ private fun CombatantColumn(
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
         ) {
             if (!hitBadge.isNullOrBlank()) {
                 Surface(
