@@ -105,24 +105,33 @@ class DccApiClient(context: Context) {
             val resolved = resolveUrl(baseUrl, "dcc_friends_poll.php")
             val request = Request.Builder().url(resolved).get().build()
             httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
-                val body = response.body?.string()?.trim().orEmpty()
-                if (!body.startsWith("{")) return@runCatching null
-                val obj = json.parseToJsonElement(body).jsonObject
-                if (obj["ok"]?.jsonPrimitive?.content == "false") return@runCatching null
-                val online = obj["online"]?.jsonPrimitive?.intOrNull
-                    ?: obj["onlineCount"]?.jsonPrimitive?.intOrNull
-                    ?: obj["online_count"]?.jsonPrimitive?.intOrNull
-                    ?: 0
-                val total = obj["total"]?.jsonPrimitive?.intOrNull
-                    ?: obj["totalCount"]?.jsonPrimitive?.intOrNull
-                    ?: obj["total_count"]?.jsonPrimitive?.intOrNull
-                    ?: 0
-                val pending = obj["pending"]?.jsonPrimitive?.intOrNull
-                    ?: obj["pendingCount"]?.jsonPrimitive?.intOrNull
-                    ?: obj["requests"]?.jsonPrimitive?.intOrNull
-                    ?: 0
-                FriendsStatusSnapshot(online = online, total = total, pending = pending)
+                if (!response.isSuccessful) {
+                    null
+                } else {
+                    val body = response.body?.string()?.trim().orEmpty()
+                    if (!body.startsWith("{")) {
+                        null
+                    } else {
+                        val obj = json.parseToJsonElement(body).jsonObject
+                        if (obj["ok"]?.jsonPrimitive?.content == "false") {
+                            null
+                        } else {
+                            val online = obj["online"]?.jsonPrimitive?.intOrNull
+                                ?: obj["onlineCount"]?.jsonPrimitive?.intOrNull
+                                ?: obj["online_count"]?.jsonPrimitive?.intOrNull
+                                ?: 0
+                            val total = obj["total"]?.jsonPrimitive?.intOrNull
+                                ?: obj["totalCount"]?.jsonPrimitive?.intOrNull
+                                ?: obj["total_count"]?.jsonPrimitive?.intOrNull
+                                ?: 0
+                            val pending = obj["pending"]?.jsonPrimitive?.intOrNull
+                                ?: obj["pendingCount"]?.jsonPrimitive?.intOrNull
+                                ?: obj["requests"]?.jsonPrimitive?.intOrNull
+                                ?: 0
+                            FriendsStatusSnapshot(online = online, total = total, pending = pending)
+                        }
+                    }
+                }
             }
         }.getOrNull()
     }

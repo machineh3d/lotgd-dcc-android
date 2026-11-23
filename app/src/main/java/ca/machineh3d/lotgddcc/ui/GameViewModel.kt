@@ -703,11 +703,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        if (online != null) {
+        val resolvedOnline = online
+        val resolvedPending = pending
+        if (resolvedOnline != null) {
             _uiState.update {
                 it.copy(
-                    friendsOnlineCount = online,
-                    friendsPendingCount = pending ?: it.friendsPendingCount,
+                    friendsOnlineCount = resolvedOnline,
+                    friendsPendingCount = resolvedPending ?: it.friendsPendingCount,
                 )
             }
         }
