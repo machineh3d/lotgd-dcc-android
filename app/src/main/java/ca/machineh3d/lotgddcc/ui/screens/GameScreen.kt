@@ -1524,8 +1524,6 @@ private fun CrawlerStatsSheetContent(
     sections: List<CharStatSection>,
     secondsPerGameDay: Int,
     sessionTelemetry: SessionTelemetry,
-    friendsOnlineCount: Int,
-    friendsPendingCount: Int,
     modifier: Modifier = Modifier,
 ) {
     var elapsedSec by remember(sections) { mutableIntStateOf(0) }
