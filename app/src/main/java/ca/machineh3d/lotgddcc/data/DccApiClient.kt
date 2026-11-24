@@ -147,6 +147,16 @@ class DccApiClient(context: Context) {
     }
 
     suspend fun login(baseUrl: String, username: String, password: String): DccPageResponse {
+        // Warm up PHPSESSID session cookie first so NB-Core never rejects fresh/new-domain logins as cookie-blocked
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val warmupReq = Request.Builder()
+                    .url(resolveUrl(baseUrl, "home.php"))
+                    .get()
+                    .build()
+                httpClient.newCall(warmupReq).execute().close()
+            }
+        }
         val resolved = resolveUrl(baseUrl, "login.php")
         val body = FormBody.Builder()
             .add("name", username.trim())

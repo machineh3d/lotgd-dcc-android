@@ -322,11 +322,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     syncFriendsCountsFromPage(resp)
                     _uiState.update { it.copy(isLoading = false, page = resp) }
                 } else {
-                    val serverHint = resp.paragraphs
-                        .flatten()
-                        .joinToString("") { it.text }
-                        .trim()
-                        .take(180)
+                    val lines = resp.paragraphs.map { line -> line.joinToString("") { it.text }.trim() }
+                    val errorLine = lines.firstOrNull { l ->
+                        l.contains("incorrect", ignoreCase = true) ||
+                            l.contains("wrong", ignoreCase = true) ||
+                            l.contains("failed", ignoreCase = true) ||
+                            l.contains("blocked", ignoreCase = true) ||
+                            l.contains("banned", ignoreCase = true) ||
+                            l.contains("verif", ignoreCase = true) ||
+                            l.contains("cookies", ignoreCase = true) ||
+                            l.contains("timeout", ignoreCase = true)
+                    }
+                    val serverHint = (errorLine ?: "").take(180)
                     _uiState.update {
                         it.copy(
                             isLoading = false,

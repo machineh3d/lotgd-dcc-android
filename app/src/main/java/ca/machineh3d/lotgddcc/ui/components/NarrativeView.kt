@@ -45,6 +45,13 @@ private val COMPACT_COMBAT_SKIP_REGEX = Regex(
     RegexOption.IGNORE_CASE,
 )
 
+// Strips stray web theme footer lines (e.g. "• Dungeon Crawler World: Earth", ".", "About & Credits")
+// that otherwise float awkwardly above inline choice cards and room forms.
+private val WEB_FOOTER_CHROME_REGEX = Regex(
+    """^(?:[•●·\-\s]*Dungeon Crawler World:\s*Earth(?:\s*[·•|]\s*About\s*(?:&|and)\s*Credits)?|[•●·\-\s]*About\s*(?:&|and)\s*Credits|[.·•|])$""",
+    RegexOption.IGNORE_CASE,
+)
+
 // Matches jammed room resource lines like:
 // "Gold Credits: 1,058Sponsor Tokens: 4Daily Workbench Crafts Left: 2 / 2"
 private val STAT_PAIR_REGEX = Regex(
@@ -71,6 +78,7 @@ fun NarrativeView(
         for (spans in paragraphs) {
             val plain = spans.joinToString("") { it.text }.trim()
             if (plain.isEmpty()) continue
+            if (WEB_FOOTER_CHROME_REGEX.matches(plain)) continue
 
             if (compactCombatLog && isCombatPage && COMPACT_COMBAT_SKIP_REGEX.containsMatchIn(plain)) {
                 continue
