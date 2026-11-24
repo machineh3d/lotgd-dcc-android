@@ -672,7 +672,8 @@ private fun partitionHubGroups(
                     u.contains("clan.php") || u.contains("personalspace") ||
                     u.contains("bopcaprotector") || u.contains("forestcasino") ||
                     u.contains("systemai") || u.contains("sponsors") ||
-                    u.contains("clubvanquisher") || u.contains("turnbank")
+                    u.contains("clubvanquisher") || u.contains("turnbank") ||
+                    u.contains("dungeonbosses") || u.contains("factionwars")
             }
     }
 
@@ -702,7 +703,7 @@ fun InlineChoiceDeck(
 ) {
     if (badnav || pageType == "combat") return
     val allItems = remember(navGroups) { navGroups.flatMap { it.items } }
-    if (allItems.size !in 3..12) return
+    if (allItems.size !in 3..14) return
 
     val hasCorridorsHub = allItems.any {
         it.url.startsWith("forest.php", ignoreCase = true) ||
@@ -724,9 +725,14 @@ fun InlineChoiceDeck(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(12.dp)
         ) {
+            val isMordecaiHandbook = allItems.any { it.url.contains("dcctutor", ignoreCase = true) }
             Text(
-                text = "CHOOSE AN OPTION (${choiceItems.size})",
-                color = DccColors.Cyan,
+                text = if (isMordecaiHandbook) {
+                    "SURVIVAL HANDBOOK (${choiceItems.size})"
+                } else {
+                    "CHOOSE AN OPTION (${choiceItems.size})"
+                },
+                color = if (isMordecaiHandbook) DccColors.Emerald else DccColors.Cyan,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.1.sp,

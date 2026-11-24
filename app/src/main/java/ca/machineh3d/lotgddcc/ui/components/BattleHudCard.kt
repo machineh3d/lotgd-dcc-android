@@ -109,7 +109,10 @@ private val DMG_TAKEN_REGEX = Regex(
  * Filters out redundant plain-text paragraphs emitted by the server-side web `battlehud.php`
  * module when the native Compose Battle HUD is active, without touching LotGD narrative lines.
  */
-private val WEB_HUD_STAT_LINE_REGEX = Regex("""Lv\s*\d+\s*/\s*\d+\s*HP""", RegexOption.IGNORE_CASE)
+private val WEB_HUD_STAT_LINE_REGEX = Regex(
+    """(?:Lv\s*\d+\s*/\s*\d+\s*HP|\d+\s*/\s*\d+\s*HP\s*\(DEFEATED\))""",
+    RegexOption.IGNORE_CASE,
+)
 
 fun filterRedundantWebBattleHudParagraphs(paragraphs: List<List<TextSpan>>): List<List<TextSpan>> {
     return paragraphs.filterNot { line ->
@@ -117,6 +120,7 @@ fun filterRedundantWebBattleHudParagraphs(paragraphs: List<List<TextSpan>>): Lis
         plain.startsWith("TACTICAL COMBAT HUD", ignoreCase = true) ||
             plain.startsWith("SYNDICATE COMBAT TELEMETRY", ignoreCase = true) ||
             plain.contains("LIVE CORRIDOR COMBAT TELEMETRY", ignoreCase = true) ||
+            plain.contains("SYNDICATE DRONE FEED", ignoreCase = true) ||
             plain.equals("HOSTILE ELIMINATED", ignoreCase = true) ||
             plain.equals("CRITICAL BIOMETRIC FAILURE", ignoreCase = true) ||
             plain.startsWith("Equipped:", ignoreCase = true) ||
@@ -754,7 +758,7 @@ private fun parseBattleState(page: DccPageResponse): ParsedBattleState? {
             .takeIf { it > 0 }
         val critDealt = fullText.contains("CRITICAL", ignoreCase = true)
         return ParsedBattleState(
-            outcome = BattleOutcome.ACTIVE,
+            outcome = if (currentHp <= 0) BattleOutcome.VICTORY else BattleOutcome.ACTIVE,
             enemyName = enemyName,
             enemyLevel = enemyLevel,
             enemyWeapon = encounterWeapon,

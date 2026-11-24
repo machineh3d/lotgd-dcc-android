@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -13,29 +15,38 @@ android {
         applicationId = "ca.machineh3d.lotgddcc"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.15.2-alpha"
+        versionCode = 31
+        versionName = "0.16.0-alpha"
 
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
-    val ksPath = System.getenv("DCC_KEYSTORE_PATH")
+    val ksProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val ksPath = System.getenv("DCC_KEYSTORE_PATH") ?: ksProps.getProperty("storeFile")
     val hasReleaseKeystore = !ksPath.isNullOrBlank() && file(ksPath).exists()
 
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
                 storeFile = file(ksPath!!)
-                storePassword = System.getenv("DCC_KEYSTORE_PASSWORD") ?: ""
-                keyAlias = System.getenv("DCC_KEY_ALIAS") ?: "lotgd-dcc"
-                keyPassword = System.getenv("DCC_KEY_PASSWORD") ?: ""
+                storePassword = System.getenv("DCC_KEYSTORE_PASSWORD") ?: ksProps.getProperty("storePassword", "")
+                keyAlias = System.getenv("DCC_KEY_ALIAS") ?: ksProps.getProperty("keyAlias", "lotgd-dcc")
+                keyPassword = System.getenv("DCC_KEY_PASSWORD") ?: ksProps.getProperty("keyPassword", "")
             }
         }
     }
 
     buildTypes {
+        debug {
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             isMinifyEnabled = false
             signingConfig = if (hasReleaseKeystore) {

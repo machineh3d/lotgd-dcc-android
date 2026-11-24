@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Icon
@@ -102,6 +103,9 @@ fun NarrativeView(
             val isLootBox = plain.contains("LOOT BOX", ignoreCase = true)
             val isAchievement = plain.contains("NEW ACHIEVEMENT", ignoreCase = true) ||
                 plain.contains("SECRET ACHIEVEMENT", ignoreCase = true)
+            val isMordecaiGuide = plain.contains("GAME GUIDE MORDECAI", ignoreCase = true) ||
+                plain.contains("MORDECAI'S ROOKIE", ignoreCase = true) ||
+                plain.contains("MORDECAI TIP", ignoreCase = true)
 
             val annotated = buildAnnotatedString {
                 for (span in spans) {
@@ -141,10 +145,22 @@ fun NarrativeView(
                 }
             }
 
-            if (isAchievement || isLootBox) {
-                val accent = if (isLootBox) DccColors.Cyan else DccColors.Gold
-                val badgeTitle = if (isLootBox) "SPONSOR LOOT BOX" else "SYSTEM AI ACHIEVEMENT"
-                val icon = if (isLootBox) Icons.Filled.CardGiftcard else Icons.Filled.EmojiEvents
+            if (isAchievement || isLootBox || isMordecaiGuide) {
+                val accent = when {
+                    isLootBox -> DccColors.Cyan
+                    isAchievement -> DccColors.Gold
+                    else -> DccColors.Emerald
+                }
+                val badgeTitle = when {
+                    isLootBox -> "SPONSOR LOOT BOX"
+                    isAchievement -> "SYSTEM AI ACHIEVEMENT"
+                    else -> "GAME GUIDE MORDECAI"
+                }
+                val icon = when {
+                    isLootBox -> Icons.Filled.CardGiftcard
+                    isAchievement -> Icons.Filled.EmojiEvents
+                    else -> Icons.Filled.AutoStories
+                }
 
                 Surface(
                     color = accent.copy(alpha = 0.12f),

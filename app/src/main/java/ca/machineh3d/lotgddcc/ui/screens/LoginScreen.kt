@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import ca.machineh3d.lotgddcc.BuildConfig
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 
+private const val DEFAULT_SERVER_URL = "https://dcw.wearepwn.com"
+
 @Composable
 fun LoginScreen(
     initialServerUrl: String,
@@ -84,7 +86,7 @@ fun LoginScreen(
     onRemoveRecentUrl: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    var serverUrl by remember { mutableStateOf(initialServerUrl) }
+    var serverUrl by remember { mutableStateOf(initialServerUrl.ifBlank { DEFAULT_SERVER_URL }) }
     var username by remember { mutableStateOf(initialUsername) }
     var password by remember { mutableStateOf(initialPassword) }
     var rememberCredentials by remember { mutableStateOf(initialRememberCredentials) }
@@ -92,7 +94,7 @@ fun LoginScreen(
     var recentMenuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialServerUrl) {
-        if (serverUrl.isBlank() && initialServerUrl.isNotBlank()) {
+        if (initialServerUrl.isNotBlank() && (serverUrl.isBlank() || serverUrl == DEFAULT_SERVER_URL)) {
             serverUrl = initialServerUrl
         }
     }
@@ -160,7 +162,7 @@ fun LoginScreen(
                             value = serverUrl,
                             onValueChange = { serverUrl = it },
                             label = { Text("Server URL") },
-                            placeholder = { Text("https://dcc.yourdomain.com") },
+                            placeholder = { Text(DEFAULT_SERVER_URL) },
                             leadingIcon = {
                                 Icon(Icons.Filled.Public, contentDescription = null, tint = DccColors.Cyan)
                             },
@@ -321,6 +323,25 @@ fun LoginScreen(
                     ) {
                         Text("Register New Crawler", color = DccColors.Cyan)
                     }
+
+                    Text(
+                        text = "Need a closed beta invite? Request Access",
+                        color = DccColors.Gold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = !isLoading) {
+                                runCatching {
+                                    val target = serverUrl.trim().ifBlank { DEFAULT_SERVER_URL }
+                                    val normalized = if (target.startsWith("http://") || target.startsWith("https://")) target else "https://$target"
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(normalized)))
+                                }
+                            }
+                            .padding(vertical = 6.dp)
+                    )
                 }
             }
 
