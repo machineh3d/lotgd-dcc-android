@@ -86,13 +86,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val systemDark = isSystemInDarkTheme()
-            val useLight = when (state.themeMode) {
-                AppThemeMode.LIGHT -> true
-                AppThemeMode.DARK -> false
-                AppThemeMode.SYSTEM -> !systemDark
-            }
-
-            LotgdDccTheme(useLightTheme = useLight) {
+            LotgdDccTheme(themeMode = state.themeMode, systemDark = systemDark) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     val activePage = state.page
                     if (activePage == null) {

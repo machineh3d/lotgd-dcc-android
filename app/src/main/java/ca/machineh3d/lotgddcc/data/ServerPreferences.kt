@@ -11,18 +11,24 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "dcc_client_prefs")
 
-enum class AppThemeMode(val storageKey: String, val label: String) {
-    SYSTEM("system", "Auto"),
-    DARK("dark", "Dark"),
-    LIGHT("light", "Light");
+enum class AppThemeMode(
+    val storageKey: String,
+    val label: String,
+    val subtitle: String,
+) {
+    DARK("dark", "Syndicate Dark", "Default"),
+    AMOLED("amoled", "Void AMOLED", "True Black"),
+    TERMINAL("terminal", "Borant CRT", "Phosphor"),
+    DESPERADO("desperado", "Desperado Club", "Neon Plum"),
+    IRON_TANGLE("iron_tangle", "Iron Tangle", "Warm Rust"),
+    LIGHT("light", "Syndicate Light", "Daylight"),
+    SYSTEM("system", "Auto", "System"),
+    ;
 
     companion object {
-        fun fromKey(raw: String?, legacyLight: Boolean): AppThemeMode = when (raw?.lowercase()) {
-            "system" -> SYSTEM
-            "dark" -> DARK
-            "light" -> LIGHT
-            else -> if (legacyLight) LIGHT else DARK
-        }
+        fun fromKey(raw: String?, legacyLight: Boolean): AppThemeMode =
+            entries.firstOrNull { it.storageKey.equals(raw, ignoreCase = true) }
+                ?: if (legacyLight) LIGHT else DARK
     }
 }
 

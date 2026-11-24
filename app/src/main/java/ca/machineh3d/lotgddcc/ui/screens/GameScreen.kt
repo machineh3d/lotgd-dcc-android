@@ -83,7 +83,10 @@ import ca.machineh3d.lotgddcc.ui.components.NativeFormCard
 import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
 import ca.machineh3d.lotgddcc.ui.components.filterRedundantWebBattleHudParagraphs
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
+import ca.machineh3d.lotgddcc.ui.theme.paletteFor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalTime
@@ -904,34 +907,83 @@ private fun ClientSettingsSheetContent(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    for (mode in AppThemeMode.entries) {
-                        val selected = themeMode == mode
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (selected) DccColors.Cyan.copy(alpha = 0.18f) else DccColors.Surface
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (selected) DccColors.Cyan else DccColors.Outline,
-                                    shape = RoundedCornerShape(8.dp),
-                                )
-                                .clickable { onUpdateThemeMode(mode) }
-                                .padding(vertical = 8.dp)
+                val systemDark = isSystemInDarkTheme()
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (rowModes in AppThemeMode.entries.chunked(2)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = mode.label,
-                                color = if (selected) DccColors.Cyan else DccColors.TextPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                            )
+                            for (mode in rowModes) {
+                                val selected = themeMode == mode
+                                val preview = paletteFor(mode, systemDark)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (selected) DccColors.Cyan.copy(alpha = 0.16f) else DccColors.Surface
+                                        )
+                                        .border(
+                                            width = if (selected) 1.5.dp else 1.dp,
+                                            color = if (selected) DccColors.Cyan else DccColors.Outline,
+                                            shape = RoundedCornerShape(10.dp),
+                                        )
+                                        .clickable { onUpdateThemeMode(mode) }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    // Live 3-dot palette swatch preview
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(preview.Background)
+                                            .border(1.dp, preview.Outline, RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 5.dp, vertical = 4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(preview.Crimson)
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(preview.Cyan)
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(preview.Gold)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = mode.label,
+                                            color = if (selected) DccColors.Cyan else DccColors.TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = mode.subtitle,
+                                            color = DccColors.TextSecondary,
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowModes.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
                 }
