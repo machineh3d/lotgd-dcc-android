@@ -554,15 +554,46 @@ fun GameScreen(
                         if (page.forms.isEmpty()) {
                             page.tables
                         } else {
+                            val formFieldLabels = page.forms
+                                .flatMap { it.fields }
+                                .mapNotNull { it.label.trim().trimEnd(':', '?').lowercase().takeIf { s -> s.length >= 3 } }
+                                .toSet()
+                            val formSelectBlobs = page.forms
+                                .flatMap { it.fields }
+                                .filter { it.type == "select" && it.options.size >= 2 }
+                                .map { f -> f.options.joinToString("") { it.label.trim() }.lowercase() }
+                                .filter { it.length >= 4 }
+                                .toSet()
+
                             page.tables.filterNot { table ->
-                                val noHeaders = table.headers.isEmpty()
                                 val noActions = table.rows.none { !it.actionUrl.isNullOrBlank() }
-                                val isCreatePage = page.currentUrl.contains("create.php", ignoreCase = true)
+                                if (!noActions) return@filterNot false
+
+                                val noHeaders = table.headers.isEmpty()
+                                val isKnownFormPage = page.currentUrl.contains("create.php", ignoreCase = true) ||
+                                    page.currentUrl.contains("prefs.php", ignoreCase = true) ||
+                                    page.currentUrl.contains("configuration.php", ignoreCase = true)
+
+                                val matchedFormRows = table.rows.count { row ->
+                                    val first = row.cells.firstOrNull()?.trim()?.trimEnd(':', '?')?.lowercase().orEmpty()
+                                    val second = row.cells.getOrNull(1)?.trim()?.lowercase().orEmpty()
+                                    val labelHit = first.length >= 3 && formFieldLabels.any { lbl ->
+                                        first == lbl || first.contains(lbl) || lbl.contains(first)
+                                    }
+                                    val selectHit = second.length >= 4 && formSelectBlobs.any { blob ->
+                                        second.replace(" ", "") == blob.replace(" ", "")
+                                    }
+                                    labelHit || selectHit
+                                }
+
                                 val looksLikeFormLabels = table.rows.any { row ->
                                     val first = row.cells.firstOrNull()?.trim().orEmpty()
                                     first.endsWith(":") || first.endsWith("?")
                                 }
-                                noHeaders && noActions && (isCreatePage || looksLikeFormLabels)
+
+                                matchedFormRows >= 2 ||
+                                    (isKnownFormPage && (matchedFormRows >= 1 || table.rows.isNotEmpty())) ||
+                                    (noHeaders && looksLikeFormLabels)
                             }
                         }
                     }

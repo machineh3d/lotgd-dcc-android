@@ -58,9 +58,16 @@ fun NativeFormCard(
     modifier: Modifier = Modifier,
 ) {
     val isRegistrationForm = remember(form) {
-        form.action.contains("create.php", ignoreCase = true) ||
-            (form.fields.any { it.name.equals("pass1", ignoreCase = true) } &&
-                form.fields.any { it.name.equals("pass2", ignoreCase = true) })
+        val hasCreateAction = form.action.contains("create.php", ignoreCase = true)
+        val hasPrefsAction = form.action.contains("prefs.php", ignoreCase = true)
+        val hasOldPass = form.fields.any {
+            it.name.equals("oldpass", ignoreCase = true) ||
+                it.label.contains("current password", ignoreCase = true)
+        }
+        val hasNewAccountFields = form.fields.any { it.name.equals("name", ignoreCase = true) } &&
+            form.fields.any { it.name.equals("pass1", ignoreCase = true) } &&
+            form.fields.any { it.name.equals("pass2", ignoreCase = true) }
+        hasCreateAction || (!hasPrefsAction && !hasOldPass && hasNewAccountFields)
     }
 
     val values = remember(form) {
@@ -103,7 +110,7 @@ fun NativeFormCard(
 
     val pass1 = values["pass1"].orEmpty()
     val pass2 = values["pass2"].orEmpty()
-    val passwordMismatch = isRegistrationForm && pass2.isNotEmpty() && pass1 != pass2
+    val passwordMismatch = pass2.isNotEmpty() && pass1 != pass2
 
     Surface(
         color = DccColors.Surface,
