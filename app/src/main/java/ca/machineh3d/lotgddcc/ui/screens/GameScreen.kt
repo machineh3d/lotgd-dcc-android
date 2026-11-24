@@ -84,7 +84,9 @@ import ca.machineh3d.lotgddcc.ui.components.NativeTableCards
 import ca.machineh3d.lotgddcc.ui.components.TopHudBar
 import ca.machineh3d.lotgddcc.ui.components.filterRedundantWebBattleHudParagraphs
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextOverflow
 import ca.machineh3d.lotgddcc.ui.theme.DccColors
 import ca.machineh3d.lotgddcc.ui.theme.paletteFor
 import kotlinx.coroutines.delay
